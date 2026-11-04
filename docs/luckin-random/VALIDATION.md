@@ -14,8 +14,8 @@
 | Python 语法 | python -m compileall -q scripts | 通过 |
 | 差异空白检查 | git diff --check 本轮已跟踪路径 | 通过，另有 Windows CRLF 规范化提示 |
 | 官方 MCP | tools/list 实际请求 | HTTP 401；随后正式初始化发现命令也失败，没有实时 schema |
-| macOS Swift 核心测试 | 6 项已写入 Package.swift/Tests | 未运行 |
-| Xcode/IPA | 现有 Actions 流水线已增补测试 | 未触发本 App 构建，无 IPA |
+| macOS Swift 核心测试 | 成功运行 41875870306 | 6/6 通过 |
+| Xcode/IPA | 成功运行 41875870306，Xcode 16.4 / iPhoneOS 18.5 | 原生编译和未签名 IPA 通过；本机哈希/结构核对通过 |
 | 签名/安装/真机/支付 | 需要用户设备操作和明确消费授权 | 未验证 |
 
 本机完整后端测试输出保存于被忽略的 `artifacts/luckin-random-validation/backend-tests.txt`。源码包不含运行数据或认证资料。
@@ -63,3 +63,9 @@ Windows 独立 ZIP CRC、plist、Mach-O、来源 commit/run ID、SHA256、无签
 交付前再次核对：唯一作业的所有步骤均已 completed，测试/编译/上传/Complete job 为 success；原始日志证实后端 27/27、Swift 6/6、BUILD SUCCEEDED；本机对真实 Payload/Info.plist/Mach-O/ZIP/哈希及来源 commit/run ID 全部核验。源码树与当前 main 完全相同。
 GitHub run 总状态在交付时仍 in_progress，已原样记录在交付审计中；没有修改 download-ipa.ps1 的 success 门禁。本次使用已成功上传的 Artifact 做人工独立核验和本机交付。总状态仍待平台更新，不能表述为整个 workflow 已终结。
 此为未签名开发版 IPA，用户需在自己的电脑使用 Sideloadly 签名安装。手机安装、覆盖保留数据、续签、真实账号查询与支付仍未验收；真实下单默认关闭，Token 在手机设置页填写。
+
+## 2026-11-05 最终交付确认
+
+运行 https://github.com/severus-S/luckin-random/actions/runs/41875870306 已 completed/success。使用原有 download-ipa.ps1 指定本成功 run ID 再次下载，来源 commit/run ID、SHA256 与 IPA 结构校验全部通过。此前 in_progress 为当时平台状态，现以此最终结果为准。
+交付文件：artifacts/latest/LuckinRandom/LuckinRandom-unsigned.ipa，0.1.0 (4)，arm64，最低 iOS 17.0，Bundle ID com.sjx13.ios.luckinrandom。SHA256 e8c0dcb9885abef9cb417b4d4faf7b5efe27f10aa893de2a984a3c0e312763bd。旁附安装说明、manifest、SHA256SUMS 和交付审计。
+27 项后端测试、6 项 Swift 测试、Xcode 编译、打包、上传及本机独立验证均通过。未签名、未安装或验收真实支付；用户使用本机 Sideloadly 签名安装，Token 在手机 App 设置页填写。HTTPS 后端及真实授权仍为后续独立事项。
