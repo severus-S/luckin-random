@@ -1,0 +1,16 @@
+{
+  "name": "luckin-random-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.14.0" },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "start": "node dist/src/main.js",
+    "discover": "node dist/src/discover.js",
+    "mock:mcp": "node dist/src/mock-main.js"
+  },
+  "dependencies": { "ajv": "^8.17.1", "json-bigint": "^1.0.0" },
+  "devDependencies": { "typescript": "^5.8.3", "@types/node": "^22.14.0", "@types/json-bigint": "^1.0.4" }
+}

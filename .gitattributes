@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.swift text eol=lf
+*.ps1 text eol=lf
+*.pbxproj text eol=lf

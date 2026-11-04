@@ -1,0 +1,6 @@
+{
+  "name": "__APP_NAME__",
+  "bundleId": "__BUNDLE_ID__",
+  "version": "1.0.0",
+  "deploymentTarget": "17.0"
+}

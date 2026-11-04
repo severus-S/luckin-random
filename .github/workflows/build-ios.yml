@@ -1,0 +1,62 @@
+name: Build unsigned iOS IPA
+on:
+  push:
+    branches: [main]
+    paths: ['apps/**', 'services/luckin-random/**', 'templates/**', 'scripts/**', '.github/workflows/build-ios.yml']
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'App directory name, or ALL'
+        required: true
+        default: ALL
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    # Standard runner; no larger/paid runner, secrets or Apple account.
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test Luckin Random backend without real orders
+        working-directory: services/luckin-random
+        run: |
+          node --version
+          npm ci --ignore-scripts
+          npm test
+      - name: Build and validate
+        env:
+          SELECTED_APP: ${{ inputs.app || 'ALL' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 - <<'PY' 2>&1 | tee artifacts/build.log
+          import os, pathlib, subprocess, sys
+          names = sorted(p.parent.name for p in pathlib.Path('apps').glob('*/app.json'))
+          selected = os.environ['SELECTED_APP']
+          if selected != 'ALL':
+              if selected not in names:
+                  raise SystemExit('Unknown app; select an existing apps/* directory')
+              names = [selected]
+          if not names:
+              raise SystemExit('No apps found')
+          for name in names:
+              subprocess.run([sys.executable, 'scripts/ci_build.py', '--app', name], check=True)
+          PY
+      - name: Upload IPA and diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          retention-days: 3
+          if-no-files-found: error
+      - name: Failure guidance
+        if: failure()
+        run: echo '::error::Build failed. Inspect Build and validate and artifact build.log; see docs/TROUBLESHOOTING.md. No installable IPA is promised on failure.'

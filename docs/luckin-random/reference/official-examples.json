@@ -1,0 +1,271 @@
+{
+  "source": "https://open.lkcoffee.com/docs",
+  "bundle": "https://open01.luckincoffeecdn.com/order-mcp-site/assets/index-LkJ8_EhP.js",
+  "bundleSHA256": "a5c1413314059431c086ec9810e4d4ce2aab8503b29d5cf473c100ab3b67b035",
+  "retrievedOn": "2026-11-04",
+  "classification": "PUBLIC DOCUMENTATION EXAMPLES ONLY; NOT LIVE RESPONSES; TEST HOSTS/IDS MUST NEVER BE USED FOR LIVE ORDERS",
+  "examples": {
+    "queryShopList": {
+      "code": 0,
+      "msg": "success",
+      "data": [
+        {
+          "deptId": 245062453,
+          "deptName": "AI点单专用",
+          "address": "北京安贞环宇荟",
+          "deptTags": [],
+          "longitude": 116.392435,
+          "latitude": 39.982376,
+          "workTimeStart": "00:00",
+          "workTimeEnd": "24:00",
+          "distance": 8.2038,
+          "number": "(No.100070)"
+        }
+      ],
+      "success": true
+    },
+    "searchProductForMcp": {
+      "code": 0,
+      "msg": "success",
+      "data": [
+        {
+          "productId": 11447,
+          "productName": "耶加雪菲拿铁",
+          "skuCode": "SP9636-00001",
+          "pictureUrl": "https://imgtest03.luckincoffeecdn.com/group1/M00/0C/1E/CtoVwWZhj_aAWlpBAAFtxBsbwVg275.jpg",
+          "productAttrs": [
+            {
+              "attributeId": 122,
+              "attributeName": "温度",
+              "productSubAttrs": [
+                {
+                  "attributeId": 429,
+                  "attributeName": "热",
+                  "selected": null,
+                  "price": 0,
+                  "canSelected": null
+                }
+              ]
+            }
+          ],
+          "tags": [
+            "新品"
+          ],
+          "initialPrice": 16,
+          "estimatePrice": 16
+        }
+      ],
+      "success": true
+    },
+    "switchProduct": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "productId": 17443,
+        "productName": "冬至五养拿铁",
+        "skuCode": "SP11795-00006",
+        "pictureUrl": "",
+        "productAttrs": [
+          {
+            "attributeId": 122,
+            "attributeName": "温度",
+            "productSubAttrs": [
+              {
+                "attributeId": 429,
+                "attributeName": "热",
+                "selected": false,
+                "price": 0,
+                "canSelected": 1
+              },
+              {
+                "attributeId": 428,
+                "attributeName": "冰",
+                "selected": true,
+                "price": 0,
+                "canSelected": 1
+              }
+            ]
+          },
+          {
+            "attributeId": 416,
+            "attributeName": "杯型",
+            "productSubAttrs": [
+              {
+                "attributeId": 719,
+                "attributeName": "大杯",
+                "selected": false,
+                "price": 0,
+                "canSelected": 1
+              },
+              {
+                "attributeId": 4050,
+                "attributeName": "超大杯",
+                "selected": true,
+                "price": 5,
+                "canSelected": 1
+              }
+            ]
+          }
+        ],
+        "tags": null,
+        "initialPrice": 17,
+        "estimatePrice": 13
+      },
+      "success": true
+    },
+    "queryProductDetailInfo": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "productId": 17443,
+        "productName": "冬至五养拿铁",
+        "skuCode": "SP11795-00006",
+        "pictureUrl": "https://imgtest03.luckincoffeecdn.com/group1/M00/0B/EE/CtoVumZhkA6ACH7RAAW5NWILDQk306.jpg",
+        "productAttrs": [
+          {
+            "attributeId": 122,
+            "attributeName": "温度",
+            "productSubAttrs": [
+              {
+                "attributeId": 429,
+                "attributeName": "热",
+                "selected": false,
+                "price": 0,
+                "canSelected": 1
+              },
+              {
+                "attributeId": 428,
+                "attributeName": "冰",
+                "selected": true,
+                "price": 0,
+                "canSelected": 1
+              }
+            ]
+          }
+        ],
+        "tags": null,
+        "initialPrice": 17,
+        "estimatePrice": 13
+      },
+      "success": true
+    },
+    "previewOrder": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "aboutTime": 1778751420000,
+        "discountPrice": 16,
+        "shopInfo": {
+          "deptId": 245062453,
+          "deptName": "AI点单专用",
+          "address": "北京安贞环宇荟",
+          "deptTags": [],
+          "longitude": 116.392435,
+          "latitude": 39.982376,
+          "workTimeStart": "00:00",
+          "workTimeEnd": "24:00",
+          "distance": 0,
+          "number": "(No.100070)"
+        },
+        "productInfoList": [
+          {
+            "productId": 11447,
+            "skuCode": "SP9636-00001",
+            "name": "耶加雪菲拿铁",
+            "amount": 1,
+            "additionDesc": "热",
+            "bigPicUrl": null,
+            "breviaryPicUrl": "https://imgtest03.luckincoffeecdn.com/group1/M00/0C/1E/CtoVwWZhj_aAWlpBAAFtxBsbwVg275.jpg",
+            "initPrice": 16,
+            "estimatePrice": 16,
+            "estimateTotalPrice": 16
+          }
+        ],
+        "couponCodeList": [],
+        "orderGranularCommodityList": [
+          {
+            "commodityId": 11447,
+            "commodityCode": "SP9636",
+            "commodityName": "耶加雪菲拿铁",
+            "payableMoney": 16,
+            "payMoney": 0
+          }
+        ],
+        "expressExpectTime": null,
+        "privilegeMoney": 0,
+        "totalInitialPrice": 16
+      },
+      "success": true
+    },
+    "createOrder": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "orderId": 7639308439653908490,
+        "payOrderUrl": "weixin://wxpay/bizpayurl?pr=xxxx",
+        "payOrderQrCodeUrl": "https://opentest03.lkcoffee.com/transfer/qrcode?token=xxxx",
+        "discountPrice": 16,
+        "needPay": true,
+        "tradeNo": null,
+        "description": null,
+        "businessNotifyUrl": null,
+        "subMchid": null,
+        "orderIdStr": "7639308439653908490"
+      },
+      "success": true
+    },
+    "queryOrderDetailInfo": {
+      "code": 0,
+      "msg": "success",
+      "data": {
+        "orderId": "7639308439653908490",
+        "orderStatus": 10,
+        "orderStatusName": "待付款",
+        "aboutTime": 0,
+        "takeMealTime": "",
+        "takeMealCodeInfo": {
+          "code": "生成中",
+          "takeOrderId": "agRGjRM3AAo="
+        },
+        "shopInfo": {
+          "deptId": 245062453,
+          "deptName": "AI点单专用",
+          "address": "北京安贞环宇荟",
+          "deptTags": [],
+          "longitude": 116.392435,
+          "latitude": 39.982376,
+          "workTimeStart": "00:00",
+          "workTimeEnd": "24:00",
+          "distance": 0,
+          "number": "(No.100070)"
+        },
+        "productInfoList": null,
+        "orderPayAmount": 16,
+        "dispatchInfo": {
+          "dispatcherName": "",
+          "dispatcherMobile": "",
+          "dispatchAboutTime": "",
+          "destinationDistance": 0
+        },
+        "orderCommodityList": [
+          {
+            "commodityId": 11447,
+            "commodityCode": "SP9636",
+            "commodityName": "耶加雪菲拿铁",
+            "payableMoney": 16,
+            "payMoney": 16
+          }
+        ],
+        "orderType": "2",
+        "customerParams": null
+      },
+      "success": true
+    },
+    "cancelOrder": {
+      "code": 0,
+      "msg": "success",
+      "data": true,
+      "success": true
+    }
+  }
+}
