@@ -19,12 +19,12 @@ import UserNotifications
     init(directory: URL? = nil) {
         let dir = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("LuckinRandom", isDirectory: true)
         file = dir.appendingPathComponent("state-v1.json")
-        var error: String?
+        var loadFailure: String?
         if FileManager.default.fileExists(atPath: file.path) {
             do { let saved = try JSONDecoder().decode(LocalData.self, from: Data(contentsOf: file)); guard saved.version == 1 else { throw AppFailure("数据版本需要迁移") }; try saved.configuration.validate(); data = saved }
-            catch { data = LocalData(configuration: .fresh()); error = "本地配置读取失败，原文件已保留。请通过备份恢复，避免覆盖原数据。"; loading = true }
+            catch { data = LocalData(configuration: .fresh()); loadFailure = "本地配置读取失败，原文件已保留。请通过备份恢复，避免覆盖原数据。"; loading = true }
         } else { data = LocalData(configuration: .fresh()) }
-        message = error
+        message = loadFailure
     }
     var pool: CoffeePool { data.configuration.pools.first { $0.id == data.configuration.selectedPoolId } ?? data.configuration.pools[0] }
     var api: API { API(base: data.backendURL) }
