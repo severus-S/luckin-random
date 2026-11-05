@@ -51,9 +51,10 @@ struct SettingsView: View {
                     CentField(title: "每月最高", cents: $store.data.configuration.limits.monthly)
                     Text("默认每日一单。待付款与结果不明订单也占用预算。真实金额只采用官方服务端预览。").font(.footnote).foregroundStyle(.secondary)
                 }
-                Section("支付偏好") {
-                    Picker("优先渠道", selection: $store.data.configuration.paymentPreference) { Text("支付宝（待官方能力）").tag("alipay"); Text("微信").tag("wechat") }
-                    Text("偏好不会创建支付能力。当前文档仅列出微信 URL 和付款二维码；支付宝、同机跳转及 Face ID 付款尚未实测。").font(.footnote).foregroundStyle(.secondary)
+                Section("付款方式") {
+                    LabeledContent("主要入口", value: "瑞幸官方 App")
+                    Text("真实订单详情提供官方 App 打开入口。请在官方订单中选择可用的微信、支付宝或银行卡等方式，并由对应渠道确认付款；具体可用方式以官方页面为准。").font(.footnote).foregroundStyle(.secondary)
+                    Text("备用方式为另一块屏幕展示微信付款二维码。当前扫码类型不支持在同一部手机相册识别，也没有已验证的直接钱包收银台入口。").font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("真实下单授权") {
                     LabeledContent("当前状态", value: store.data.configuration.realOrdersEnabled ? "已授权" : "关闭")
@@ -75,7 +76,7 @@ struct SettingsView: View {
                     Button("清除本机数据", role: .destructive) { clearing = true }
                     Text("本机清除不删除服务端数据，也不撤销官方授权；先停止服务端任务。").font(.footnote).foregroundStyle(.secondary)
                 }
-                Section { Text("Luckin Random · 瑞幸随机咖啡").font(.headline); Text("非瑞幸官方 App · 0.1.0").font(.footnote).foregroundStyle(.secondary) }
+                Section { Text("Luckin Random · 瑞幸随机咖啡").font(.headline); Text("非瑞幸官方 App · 0.1.1").font(.footnote).foregroundStyle(.secondary) }
             }.navigationTitle("设置").sheet(isPresented: $showShops) { NavigationStack { ShopPicker().environmentObject(store) } }
                 .fileExporter(isPresented: $exporting, document: document, contentType: .json, defaultFilename: "LuckinRandom-配置备份") { result in if case .failure(let e) = result { store.message = e.localizedDescription } }
                 .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in

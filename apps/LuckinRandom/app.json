@@ -1,7 +1,7 @@
 {
   "name": "LuckinRandom",
   "bundleId": "com.sjx13.ios.luckinrandom",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "deploymentTarget": "17.0",
   "displayName": "瑞幸随机咖啡",
   "testPackage": true

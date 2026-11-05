@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct HistoryView: View {
     @EnvironmentObject var store: AppStore
@@ -28,8 +29,10 @@ struct HistoryView: View {
 }
 struct OrderView: View {
     @EnvironmentObject var store: AppStore; @Environment(\.dismiss) var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     let orderID: String
     @State private var working = false
+    @State private var waitingForOfficialApp = false
     var order: CoffeeOrder? { store.data.orders.first { $0.id == orderID } }
     var body: some View {
         Group {
@@ -45,14 +48,27 @@ struct OrderView: View {
                         if let id = o.officialOrderId { Text("订单号 \(id)").font(.caption).textSelection(.enabled) }
                     }
                     if let reason = o.reason { Section("处理结果") { Text(reason).foregroundStyle(.orange) } }
+                    if o.mode == "live", let id = o.officialOrderId {
+                        Section("瑞幸官方 App") {
+                            Button(o.state == "awaitingPayment" ? "去瑞幸 App 付款" : "去瑞幸 App 查看订单", systemImage: "arrow.up.forward.app") { openOfficialApp() }
+                                .frame(minHeight: 44)
+                                .accessibilityHint("打开瑞幸官方应用后，请在我的订单中选择这笔订单")
+                            Button("复制官方订单号", systemImage: "doc.on.doc") { UIPasteboard.general.string = id; store.message = "官方订单号已复制" }
+                                .frame(minHeight: 44)
+                            Text("请在同账号的“我的订单”中找到这笔订单，并核对门店、饮品和金额。可选支付方式以官方收银台为准。返回本 App 后会查询官方最新状态。").font(.footnote).foregroundStyle(.secondary)
+                            if working { ProgressView("正在查询官方状态") }
+                        }.disabled(working)
+                    }
                     if o.state == "awaitingPayment", o.mode == "live" {
-                        Section("官方付款二维码") {
+                        Section {
+                          DisclosureGroup("备用：在另一块屏幕扫码付款") {
                             if let value = o.paymentQRURL, let url = URL(string: value), url.scheme == "https" {
                                 AsyncImage(url: url) { image in image.resizable().interpolation(.none).scaledToFit() } placeholder: { ProgressView("加载官方二维码") }.frame(maxWidth: .infinity, minHeight: 220).accessibilityLabel("官方付款二维码，不是取餐码")
                                 Link("打开官方付款二维码页面", destination: url)
                                 ShareLink("在另一块屏幕展示付款二维码", item: url)
-                                Text("可在另一块屏幕展示后，用手机微信扫码付款。同机相册识码与直接跳转尚未验证；不会构造支付宝或微信支付参数。付款验证由支付渠道完成。").font(.footnote)
+                                Text("请在另一块屏幕展示二维码，再用手机微信扫一扫。当前扫码支付不支持同机相册识别、长按识别或直接点击付款；银行卡是否可选，以微信收银台显示为准。").font(.footnote).foregroundStyle(.secondary)
                             } else { Text("官方未返回可验证的付款二维码，请在瑞幸官方渠道核对订单。暂不能保证同机付款路径。") }
+                          }
                         }
                     }
                     if o.paid {
@@ -69,6 +85,21 @@ struct OrderView: View {
                 }
             } else { ContentUnavailableView("找不到订单", systemImage: "receipt") }
         }.navigationTitle("订单详情").navigationBarTitleDisplayMode(.inline).toolbar { Button("完成") { dismiss() } }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active, waitingForOfficialApp else { return }
+                waitingForOfficialApp = false
+                guard store.data.useBackend, let current = order, current.officialOrderId != nil else { return }
+                act { try await store.refresh(current) }
+            }
+    }
+    private func openOfficialApp() {
+        // The official associated-domain file lists this URL for the consumer App.
+        // App opening is navigation only; payment is confirmed by the order API.
+        let url = URL(string: "https://m.lkcoffee.com/app/download")!
+        waitingForOfficialApp = true
+        UIApplication.shared.open(url, options: [.universalLinksOnly: true]) { opened in
+            if !opened { store.message = "未能自动打开瑞幸 App。请手动打开官方 App，在同账号的“我的订单”中查看；返回后会查询官方状态。" }
+        }
     }
     func act(_ operation: @escaping () async throws -> Void) { working = true; store.perform { defer { working = false }; try await operation() } }
 }
