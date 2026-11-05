@@ -8,11 +8,16 @@ export class Engine {
   private reconciling=false;
   constructor(public store:Store, private gateway:()=>Gateway, private allowLive=false, private contractVerified=false, private now=()=>new Date(), private rng?:()=>number){}
   checkLive(g:Gateway){const c=this.store.config();if(g.mode==='live'&&(!this.allowLive||!this.contractVerified||!c.realOrdersEnabled||c.emergencyStop))throw new Fault('DISARMED','真实下单未授权或紧急停止已启用',403);}
-  budget(price:number,limits:Limits,mode:'mock'|'live',exclude?:string){
+  budget(price:number,limits:Limits,mode:'mock'|'live',exclude?:string,purpose:'spend'|'preview'='spend'){
     if(mode==='live'){
-      const saved=this.store.secret('authorizedLimits');if(!saved)throw new Fault('AUTHORIZATION','尚未明确授权消费上限',403);
-      const ceiling=JSON.parse(saved) as Limits;limits={...limits};
-      for(const k of ['cup','daily','weekly','monthly','dailyCount'] as const)limits[k]=Math.min(limits[k],ceiling[k]);
+      const saved=this.store.secret('authorizedLimits');
+      // Read-only previews never grant spending permission. Existing ceilings
+      // still apply; every create path requires the saved authorization.
+      if(!saved&&purpose==='spend')throw new Fault('AUTHORIZATION','尚未明确授权消费上限',403);
+      if(saved){
+        const ceiling=JSON.parse(saved) as Limits;limits={...limits};
+        for(const k of ['cup','daily','weekly','monthly','dailyCount'] as const)limits[k]=Math.min(limits[k],ceiling[k]);
+      }
     }
     if(!Number.isSafeInteger(price)||price<0)throw new Fault('PRICE','金额无效');
     if(price>limits.cup)throw new Fault('BUDGET','单杯价格超过上限');
@@ -39,7 +44,7 @@ export class Engine {
     const i:Intent={id,state:'validating',createdAt:this.now().toISOString(),mode:g.mode,poolId:pid,attempts:[]};
     this.busy=true;this.store.insert(i,fingerprint);
     try {
-      const quote=await this.select(g,pool,shop,i,maxCents);i.quote=quote;
+      const quote=await this.select(g,pool,shop,i,maxCents,previewOnly);i.quote=quote;
       if(previewOnly){i.state='previewed';this.store.save(i);return i;}
       // Re-read emergency stop, limits and authorization after all network awaits.
       this.checkLive(g);const latest=this.store.config();
@@ -59,7 +64,7 @@ export class Engine {
     }catch(e){i.state='failed';i.reason=e instanceof Fault?e.message:'服务连接失败，未继续创建订单';this.store.save(i);this.store.notify(i.reason);return i;}
     finally{this.busy=false;}
   }
-  private async select(g:Gateway,p:Pool,s:Shop,i:Intent,max?:number){
+  private async select(g:Gateway,p:Pool,s:Shop,i:Intent,max?:number,previewOnly=false){
     const previous=this.store.intents().find(v=>v.id!==i.id&&v.mode===g.mode&&v.poolId===p.id&&v.officialOrderId)?.candidate?.id;
     let remaining=p.candidates.filter(c=>c.enabled);
     const reasons:string[]=[];
@@ -71,7 +76,7 @@ export class Engine {
         for(const pref of candidate.preferences)product=await g.switch(s,product,pref);
         for(const pref of candidate.preferences)if(!product.attributes.find(a=>a.id===pref.group)?.options.some(o=>o.id===pref.option&&o.selected))throw new Fault('SKU','规格切换结果与保存的偏好不一致');
         if(product.id!==candidate.productId)throw new Fault('SKU','官方返回了其他商品，已停止');
-        const quote=await g.preview(s,product);this.budget(quote.payableCents,this.store.config().limits,g.mode,i.id);
+        const quote=await g.preview(s,product);this.budget(quote.payableCents,this.store.config().limits,g.mode,i.id,previewOnly?'preview':'spend');
         if(max!==undefined&&quote.payableCents>max)throw new Fault('BUDGET','超过任务授权金额');
         i.attempts.push({candidateId:candidate.id,reason:'官方预览通过'});return quote;
       }catch(e){

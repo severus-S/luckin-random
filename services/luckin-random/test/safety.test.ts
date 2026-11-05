@@ -40,6 +40,47 @@ test('persistent state, encrypted token and crash recovery survive restart',()=>
 test('payment QR accepts official HTTPS only, rejects deep links, credentials and lookalikes',()=>{assert.equal(paymentQR('https://open.lkcoffee.com/qr?token=x'),'https://open.lkcoffee.com/qr?token=x');for(const value of ['weixin://wxpay/test','https://lkcoffee.com.evil.test/qr','https://evil.test/qr','https://u:p@open.lkcoffee.com/qr','http://open.lkcoffee.com/qr'])assert.throws(()=>paymentQR(value));});
 test('malformed configuration cannot remove budget fields',()=>{const {store}=fixture();const c=store.config();delete (c.limits as Partial<typeof c.limits>).weekly;assert.throws(()=>validateConfiguration(c));store.close();});
 test('live spending ceilings cannot rise through ordinary configuration updates',()=>{const {store,engine}=fixture();const c=store.config();store.secret('authorizedLimits',JSON.stringify({...c.limits,cup:1000,daily:1000}));assert.throws(()=>engine.budget(1200,{...c.limits,cup:5000,daily:5000},'live'),/单杯/);store.close();});
+
+test('live read-only preview works while disarmed without authorizing spending',async()=>{
+ const {store,mock}=fixture();Object.defineProperty(mock,'mode',{value:'live'});
+ const c=store.config();c.realOrdersEnabled=false;c.emergencyStop=true;store.setConfig(c);
+ const engine=new Engine(store,()=>mock,false,false);
+ try{
+  const result=await engine.run('disarmed_live_preview',undefined,true);
+  assert.equal(result.state,'previewed');assert.equal(result.quote?.payableCents,990);
+  assert.equal(mock.calls,0);assert.equal(result.officialOrderId,undefined);
+  assert.equal(store.secret('authorizedLimits'),undefined);
+  assert.deepEqual(store.config(),c);
+  await assert.rejects(engine.run('disarmed_live_create'),/真实下单未授权/);
+ }finally{store.close();}
+});
+
+test('unarmed live preview still enforces configured budgets and saved ceilings',async()=>{
+ const {store,mock}=fixture();Object.defineProperty(mock,'mode',{value:'live'});
+ const engine=new Engine(store,()=>mock,false,false);mock.price=2500;
+ try{
+  const result=await engine.run('preview_over_budget',undefined,true);
+  assert.equal(result.state,'failed');assert.match(result.reason!,/单杯/);
+  mock.price=1200;const c=store.config();c.limits.cup=5000;store.setConfig(c);
+  store.secret('authorizedLimits',JSON.stringify({...c.limits,cup:1000}));
+  const ceiling=await engine.run('preview_saved_ceiling',undefined,true);
+  assert.equal(ceiling.state,'failed');assert.match(ceiling.reason!,/单杯/);
+  assert.equal(mock.calls,0);
+ }finally{store.close();}
+});
+
+test('live creation always requires a spending snapshot even with all other gates open',async()=>{
+ const {store,mock}=fixture();Object.defineProperty(mock,'mode',{value:'live'});
+ const c=store.config();c.realOrdersEnabled=true;c.emergencyStop=false;store.setConfig(c);
+ const engine=new Engine(store,()=>mock,true,true);
+ try{
+  const preview=await engine.run('snapshot_free_preview',undefined,true);
+  assert.equal(preview.state,'previewed');
+  const create=await engine.run('snapshot_required_create');
+  assert.equal(create.state,'failed');assert.match(create.reason!,/尚未明确授权消费上限/);
+  assert.equal(mock.calls,0);assert.equal(store.secret('authorizedLimits'),undefined);
+ }finally{store.close();}
+});
 test('job slot claims survive database restart',()=>{const dir=mkdtempSync(join(tmpdir(),'luckin-slot-')),path=join(dir,'db.sqlite'),key=randomBytes(32);try{let s=new Store(path,key);assert.equal(s.claim('job1','2026-11-04T09:00','intent1'),true);s.close();s=new Store(path,key);assert.equal(s.claim('job1','2026-11-04T09:00','intent1'),false);s.close();}finally{rmSync(dir,{recursive:true,force:true});}});
 test('scheduler pause during preview prevents creation',async()=>{const {store,mock,engine}=fixture();const j:Job={id:'pause_during_preview',enabled:true,authorized:true,poolId:store.config().selectedPoolId,shop:mock.shop,hour:9,minute:0,weekdays:[3],timezone:'Asia/Shanghai',maxCents:1500};store.job(j);const preview=mock.preview.bind(mock);mock.preview=async(s,p)=>{const q=await preview(s,p);store.job({...j,enabled:false});return q;};await engine.tick(new Date('2026-11-04T01:00:00Z'));assert.equal(mock.calls,0);assert.equal(store.intents()[0]?.state,'failed');assert.match(store.intents()[0]?.reason??'',/暂停/);store.close();});
 test('MCP 401 fails closed and never reflects token or response body',async()=>{const m=new MCP('SECRET_EXPIRED_TOKEN','https://example.test/mcp',async()=>new Response('SECRET_EXPIRED_TOKEN',{status:401}));await assert.rejects(m.discover(),(e:Error)=>/令牌已失效/.test(e.message)&&!e.message.includes('SECRET'));});

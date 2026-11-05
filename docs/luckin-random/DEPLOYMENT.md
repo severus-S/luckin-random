@@ -22,7 +22,7 @@ Windows 执行 `python scripts/package-luckin-server.py`，本机完成编译、
 
 ## 升级与恢复
 
-1. 本机打包并测试，上传到新的 release 目录，核对 SHA256，保持 root 所有、服务账号只读。
+1. 本机打包并测试，核对 SHA256。可用 `scripts/upgrade-luckin-server.sh`，传入 PACKAGE、PACKAGE_SHA256、RELEASE_ID；目标先做受限测试，再停服务备份并切换，保持 root 所有、服务账号只读。环境文件不会被改写，失败回退前先核对数据库迁移版本。
 2. 停止 `luckin-random`，通过 SQLite backup API 备份数据库；环境密钥另行加密备份。备份含私人配置或订单，不得提交仓库。
 3. 保持 `/var/lib/luckin-random/`、现有环境密钥及 Bundle ID，切换 current 符号链接后启动。迁移向前执行；禁止以删除数据库解决升级问题。
 4. 验证 HTTPS、状态、配置及进程。若数据库版本没有变化，可停服务并切回上一 release；已迁移的数据必须使用兼容程序或经过审计的备份恢复，不能盲目降级。
