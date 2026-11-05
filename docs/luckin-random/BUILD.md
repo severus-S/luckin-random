@@ -49,3 +49,11 @@ GitHub run 总状态在交付时仍 in_progress，已原样记录在交付审计
 运行 https://github.com/severus-S/luckin-random/actions/runs/41875870306 已 completed/success。使用原有 download-ipa.ps1 指定本成功 run ID 再次下载，来源 commit/run ID、SHA256 与 IPA 结构校验全部通过。此前 in_progress 为当时平台状态，现以此最终结果为准。
 交付文件：artifacts/latest/LuckinRandom/LuckinRandom-unsigned.ipa，0.1.0 (4)，arm64，最低 iOS 17.0，Bundle ID com.sjx13.ios.luckinrandom。SHA256 e8c0dcb9885abef9cb417b4d4faf7b5efe27f10aa893de2a984a3c0e312763bd。旁附安装说明、manifest、SHA256SUMS 和交付审计。
 27 项后端测试、6 项 Swift 测试、Xcode 编译、打包、上传及本机独立验证均通过。未签名、未安装或验收真实支付；用户使用本机 Sideloadly 签名安装，Token 在手机 App 设置页填写。HTTPS 后端及真实授权仍为后续独立事项。
+
+## 2026-11-05 0.1.1（6）云端编译及交付核验
+
+[GitHub Actions 41972882598](https://github.com/severus-S/luckin-random/actions/runs/41972882598) 已 completed/success；源码 commit 为 `22294cc7579e3648bc1d47a8ade501ef927ead0e`。标准 macos-15-intel runner 上后端 30 项测试、Swift 核心 6 项测试、Xcode 16.4 Release iphoneos arm64 编译、打包及上传通过。通过既有 download-ipa.ps1 下载，并核对 manifest 的 commit/run ID、SHA256、ZIP CRC、Info.plist 和 arm64 Mach-O。未签名 IPA 为 0.1.1（6），最低 iOS 17，Bundle ID `com.sjx13.ios.luckinrandom` 不变。
+
+SHA256：`9ffd2f6ef4e3c482e82b21170fec29fed770e5650eb8ce3b4c483709f379e8f7`。稳定产物位于 `artifacts/latest/LuckinRandom/LuckinRandom-unsigned.ipa`，另复制至原工作区相同相对路径。旁附新版安装说明及交付审计。未操作电脑界面或手机，未创建新订单或付款；0.1.1 覆盖升级保留配置、官方 App 唤起、返回刷新及真实收银台付款仍待用户真机验收。
+
+先用此前已取消订单测试“去瑞幸 App 查看订单”及返回刷新，不尝试支付已取消订单。用户以相同签名身份和有效 Bundle ID 覆盖安装，不卸载旧版；Token 继续在手机设置页管理。新单付款另需该笔门店、规格、数量和金额上限授权，原单授权不可复用，长期真实下单与自动任务仍关闭。
