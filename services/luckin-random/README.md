@@ -11,7 +11,7 @@ Copy-Item config.example.env .env
 node --env-file=.env dist/src/main.js
 ```
 
-Mock API 也要求配对密钥。iPhone 只接受 HTTPS 后端 URL；Windows 回环 HTTP 仅供自动化测试，不能作为手机服务器地址。生产需本机反向代理终止 HTTPS，覆盖 `X-Forwarded-Proto`，API 仅监听回环；不在本次任务中自动部署或开通付费服务。
+Mock API 也要求配对密钥。iPhone 只接受 HTTPS 后端 URL；Windows 回环 HTTP 仅供自动化测试，不能作为手机服务器地址。生产需本机反向代理终止 HTTPS，覆盖 `X-Forwarded-Proto`，API 仅监听回环；本轮已按用户授权部署，维护流程见 `../../docs/luckin-random/DEPLOYMENT.md`；不自动开通付费服务。
 
 账户授权在瑞幸官方网页由用户完成，然后在 App 设置中将 Token 通过已配对 HTTPS 连接提交。后端先做只读 schema 发现，验证成功才 AES-256-GCM 加密保存；密钥独立存放于服务环境。删除令牌会同时停止下单，官方撤销需用户操作。
 
