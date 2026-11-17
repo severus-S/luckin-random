@@ -67,12 +67,15 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             injectionTime: .atDocumentEnd, forMainFrameOnly: false))
         configuration.userContentController.addUserScript(WKUserScript(source: AuthDiagnostics.script,
             injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        configuration.userContentController.addUserScript(WKUserScript(source: ParcelRequestBridge.script,
+            injectionTime: .atDocumentStart, forMainFrameOnly: false))
         configuration.userContentController.addUserScript(WKUserScript(source: SSODebug.script,
             injectionTime: .atDocumentStart, forMainFrameOnly: false))
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         configuration.userContentController.add(AuthDiagnosticsHandler(owner: self), name: "quxDiagnostics")
         configuration.userContentController.add(SSODebugHandler(owner: self), name: "ssoDebug")
+        configuration.userContentController.addScriptMessageHandler(ParcelBridgeHandler(owner: self), contentWorld: .page, name: "quxParcels")
         webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -107,6 +110,55 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
               let line = AuthDiagnostics.line(host: host, mainFrame: message.frameInfo.isMainFrame, body: message.body) else { return }
         diagnostics.append(line)
         if diagnostics.count > 80 { diagnostics.removeFirst(diagnostics.count - 80) }
+    }
+
+    private func appendNativeTrace(_ line: String) {
+        diagnostics.append(line)
+        if diagnostics.count > 80 { diagnostics.removeFirst(diagnostics.count - 80) }
+    }
+
+    fileprivate func requestParcelPage(_ scriptMessage: WKScriptMessage, reply: @escaping (Any?, String?) -> Void) {
+        guard scriptMessage.frameInfo.isMainFrame,
+              let url = scriptMessage.frameInfo.request.url,
+              url.scheme == "https", url.host == CainiaoPage.parcels.url.host, url.path == CainiaoPage.parcels.url.path,
+              let body = scriptMessage.body as? [String: Any], let pageNumber = body["page"] as? Int,
+              (1...200).contains(pageNumber), let gateway = body["gateway"] as? String,
+              ParcelSyncPolicy.gatewayHosts.contains(gateway) else {
+            reply(nil, "Invalid parcel bridge request")
+            return
+        }
+        Task { @MainActor in
+            do {
+                let response = try await fetchNativePage(pageNumber, gateway: gateway)
+                // Do not report native/schema failures as successful empty data.
+                _ = try ParcelSyncPolicy.page(response, expectedPage: pageNumber)
+                if isParcelPage {
+                    showingLogin = false
+                    message = nil
+                    canSync = true
+                }
+                reply(response, nil)
+            } catch {
+                let code = (error as? CainiaoSession.Failure)?.code ?? "FAIL_NATIVE_PARCEL_REQUEST"
+                appendNativeTrace("Native parcels · " + code)
+                if isParcelPage {
+                    message = "包裹接口未成功（\(code)），网页空白不代表无包裹；本机数据已保留。可手动重新登录。"
+                    canSync = true
+                }
+                reply(["ret": [code], "data": [:]], nil)
+            }
+        }
+    }
+
+    private func fetchNativePage(_ pageNumber: Int, gateway: String) async throws -> [String: Any] {
+        guard ParcelSyncPolicy.gatewayHosts.contains(gateway),
+              let endpoint = URL(string: "https://\(gateway)/h5/mtop.cainiao.lpc.packageservice.querytaobaopackagelist/1.0/") else {
+            throw CainiaoSyncError.unavailable
+        }
+        let payload = "{\"appName\":\"MYEXPRESS\",\"needTemporality\":\"false\",\"currentPage\":\"\(pageNumber)\",\"pageSize\":\"5\"}"
+        return try await CainiaoSession.request(endpoint: endpoint, payload: payload,
+            store: webView.configuration.websiteDataStore.httpCookieStore,
+            trace: { [weak self] line in self?.appendNativeTrace(line) })
     }
 
     func reload() {
@@ -358,19 +410,15 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         print("[SSO-Debug] sync native; pageReady=\(ready); empty=\(context["empty"] as? Bool == true)")
         if ready {
             showingLogin = false
-            if context["empty"] as? Bool == true { return [] }
         }
         // This request never invokes lib.login or changes WebView location.
         let host = context["gateway"] as? String ?? "acs.m.taobao.com"
-        guard ParcelSyncPolicy.gatewayHosts.contains(host),
-              let endpoint = URL(string: "https://\(host)/h5/mtop.cainiao.lpc.packageservice.querytaobaopackagelist/1.0/"),
-              ParcelSyncPolicy.allowedGateway(endpoint) else { throw CainiaoSyncError.unavailable }
+        guard ParcelSyncPolicy.gatewayHosts.contains(host) else { throw CainiaoSyncError.unavailable }
         var parcels: [String: Parcel] = [:]
         for pageNumber in 1...200 {
             try Task.checkCancellation()
             guard isParcelPage else { throw CainiaoSyncError.unavailable }
-            let payload = "{\"appName\":\"MYEXPRESS\",\"needTemporality\":\"false\",\"currentPage\":\"\(pageNumber)\",\"pageSize\":\"5\"}"
-            let response = try await CainiaoSession.request(endpoint: endpoint, payload: payload, store: store)
+            let response = try await fetchNativePage(pageNumber, gateway: host)
             try Task.checkCancellation()
             guard isParcelPage else { throw CainiaoSyncError.unavailable }
             let result = try ParcelSyncPolicy.page(response, expectedPage: pageNumber)
@@ -411,5 +459,16 @@ private final class SSODebugHandler: NSObject, WKScriptMessageHandler {
     init(owner: CainiaoBrowser) { self.owner = owner }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         owner?.recordSSODebug(message)
+    }
+}
+
+@MainActor
+private final class ParcelBridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
+    weak var owner: CainiaoBrowser?
+    init(owner: CainiaoBrowser) { self.owner = owner }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
+                               replyHandler: @escaping (Any?, String?) -> Void) {
+        guard let owner else { replyHandler(nil, "Browser closed"); return }
+        owner.requestParcelPage(message, reply: replyHandler)
     }
 }
