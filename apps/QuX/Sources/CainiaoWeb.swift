@@ -44,6 +44,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     @Published var showingLogin = false
 
     private let page: CainiaoPage
+    private var activeNavigation: WKNavigation?
 
     init(page: CainiaoPage) {
         self.page = page
@@ -61,15 +62,20 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     func reload() {
-        message = nil
         showingLogin = false
-        webView.load(URLRequest(url: page.url, timeoutInterval: 30))
+        load(URLRequest(url: page.url, timeoutInterval: 30))
     }
 
     func login() {
-        message = nil
         showingLogin = true
-        webView.load(URLRequest(url: LoginNavigation.loginURL(returningTo: page.url), timeoutInterval: 30))
+        load(URLRequest(url: LoginNavigation.loginURL(returningTo: page.url), timeoutInterval: 30))
+    }
+
+    private func load(_ request: URLRequest) {
+        message = nil
+        loading = true
+        canSync = false
+        activeNavigation = webView.load(request)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
@@ -85,30 +91,39 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             if action.targetFrame?.isMainFrame != true,
                let topLevel = LoginNavigation.topLevelLogin(url, returningTo: page.url) {
                 decisionHandler(.cancel)
-                webView.load(URLRequest(url: topLevel, timeoutInterval: 30))
+                load(URLRequest(url: topLevel, timeoutInterval: 30))
                 return
             }
         }
         if action.targetFrame == nil {
             decisionHandler(.cancel)
-            webView.load(action.request)
+            load(action.request)
             return
         }
         decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        activeNavigation = navigation
+        message = nil
         loading = true
         canSync = false
     }
 
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard navigation === activeNavigation else { return }
+        message = nil
+        canGoBack = webView.canGoBack
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard navigation === activeNavigation else { return }
         loading = false
+        message = nil
         canGoBack = webView.canGoBack
         canSync = isParcelPage
         if webView.url?.host == page.url.host && webView.url?.path == page.url.path {
             showingLogin = false
-            message = nil
         }
     }
 
@@ -117,9 +132,9 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         guard let url = navigationAction.request.url, CainiaoPage.allows(url) else { return nil }
         if let login = LoginNavigation.topLevelLogin(url, returningTo: page.url) {
             showingLogin = true
-            webView.load(URLRequest(url: login))
+            load(URLRequest(url: login))
         } else {
-            webView.load(navigationAction.request)
+            load(navigationAction.request)
         }
         return nil
     }
@@ -136,11 +151,11 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) {
-        showNavigationError(error)
+        showNavigationError(error, navigation: navigation)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        showNavigationError(error)
+        showNavigationError(error, navigation: navigation)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -149,11 +164,13 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         message = "网页已停止，请重新打开。"
     }
 
-    private func showNavigationError(_ error: Error) {
-        guard (error as NSError).code != NSURLErrorCancelled else { return }
+    private func showNavigationError(_ error: Error, navigation: WKNavigation?) {
+        guard navigation === activeNavigation,
+              let message = NavigationFailure.message(for: error) else { return }
         loading = false
         canSync = false
-        message = "网页暂时无法载入，请检查网络后重试。"
+        canGoBack = webView.canGoBack
+        self.message = message
     }
 
     private var isParcelPage: Bool {

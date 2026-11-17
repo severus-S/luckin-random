@@ -7,7 +7,7 @@ let package = Package(
     targets: [
         .target(name: "QuXCore", path: "Sources",
                 exclude: ["App.swift", "CainiaoWeb.swift", "ContentView.swift", "GlassStyle.swift"],
-                sources: ["Parcel.swift", "LoginNavigation.swift"]),
+                sources: ["Parcel.swift", "LoginNavigation.swift", "NavigationFailure.swift"]),
         .testTarget(name: "QuXTests", dependencies: ["QuXCore"], path: "Tests")
     ]
 )
