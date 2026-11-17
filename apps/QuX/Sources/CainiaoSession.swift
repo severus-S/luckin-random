@@ -30,7 +30,8 @@ enum CainiaoSession {
             try Task.checkCancellation()
             let allCookies = await store.allCookies()
             let cookies = ParcelSyncPolicy.cookies(allCookies, for: endpoint)
-            let token = CainiaoLogin.signingToken(cookies.first { $0.name == "_m_h5_tk" }?.value)
+            let tokenCookie = cookies.first { $0.name == "_m_h5_tk" }
+            let token = CainiaoLogin.signingToken(tokenCookie?.value)
             let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000))
             let signature = Insecure.MD5.hash(data: Data("\(token)&\(timestamp)&12574478&\(payload)".utf8))
                 .map { String(format: "%02x", $0) }.joined()
@@ -50,8 +51,11 @@ enum CainiaoSession {
             request.setValue("cainiao_c_user", forHTTPHeaderField: "x-biz-type")
             request.setValue("env=cainiao_c_user", forHTTPHeaderField: "x-biz-info")
             request.setValue("zh_CN", forHTTPHeaderField: "cn_account_lang")
-            request.setValue("QuX/0.8.11 (iOS)", forHTTPHeaderField: "User-Agent")
-            for (key, value) in HTTPCookie.requestHeaderFields(with: cookies) { request.setValue(value, forHTTPHeaderField: key) }
+            request.setValue("QuX/0.8.12 (iOS)", forHTTPHeaderField: "User-Agent")
+            request.setValue(ParcelSyncPolicy.cookieHeader(cookies), forHTTPHeaderField: "Cookie")
+            let source = tokenCookie.map { "domain=\($0.domain),path=\($0.path)" } ?? "undefined (no matching _m_h5_tk)"
+            print("[MTOP-Debug] endpoint=\(endpoint.absoluteString) api=\(api) attempt=\(attempt + 1)")
+            print("[MTOP-Debug] Cookie keys=\(cookies.map(\.name).sorted()) tokenSource=\(source)")
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw Failure.rejected("INVALID_HTTP_RESPONSE") }
             guard http.statusCode == 200 else { throw Failure.rejected("HTTP_\(http.statusCode)") }
@@ -66,6 +70,7 @@ enum CainiaoSession {
             guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Failure.rejected("INVALID_RESPONSE") }
             if (result["ret"] as? [String] ?? []).contains(where: { $0 == "SUCCESS" || $0.hasPrefix("SUCCESS::") }) { return result }
             let code = CainiaoLogin.diagnosticCode(result)
+            print("[MTOP-Debug] endpoint=\(endpoint.absoluteString) ret=\(code) tokenSource=\(source)")
             if attempt == 0 && CainiaoLogin.shouldRetryToken(code) { continue }
             throw Failure.rejected(code)
         }

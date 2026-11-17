@@ -15,23 +15,34 @@ enum ParcelSyncPolicy {
         }
     }
     static func cookies(_ cookies: [HTTPCookie], for url: URL, now: Date = Date()) -> [HTTPCookie] {
-        cookies.filter {
+        let matching = cookies.filter {
             let domain = $0.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
             let path = url.path
             return (url.host == domain || ($0.domain.hasPrefix(".") && url.host?.hasSuffix("." + domain) == true)) &&
                 (path == $0.path || (path.hasPrefix($0.path) && ($0.path.hasSuffix("/") || path.dropFirst($0.path.count).hasPrefix("/")))) &&
                 (!$0.isSecure || url.scheme == "https") && ($0.expiresDate == nil || $0.expiresDate! > now)
-        }.sorted { $0.path.count > $1.path.count }
-    }
-    static func blocksLoginReturn(_ url: URL, mainFrame: Bool, passedQuickEnter: Bool,
-                                  manualLogin: Bool, cookies: [HTTPCookie], now: Date = Date()) -> Bool {
-        guard mainFrame, !manualLogin, ["login.m.taobao.com", "login.taobao.com"].contains(url.host ?? "") else { return false }
-        let hasTaobaoLogin = cookies.contains {
-            let domain = $0.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            return (domain == "taobao.com" || domain.hasSuffix(".taobao.com")) &&
-                ["cookie2", "unb"].contains($0.name) && !$0.value.isEmpty && ($0.expiresDate == nil || $0.expiresDate! > now)
+        }.sorted {
+            if $0.path.count != $1.path.count { return $0.path.count > $1.path.count }
+            let leftDomain = $0.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            let rightDomain = $1.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            if leftDomain.count != rightDomain.count { return leftDomain.count > rightDomain.count }
+            if $0.domain != $1.domain { return $0.domain < $1.domain }
+            if $0.name != $1.name { return $0.name < $1.name }
+            return $0.value < $1.value
         }
-        return passedQuickEnter || hasTaobaoLogin
+        var seen = Set<String>()
+        // One winner per name. This exact array supplies BOTH the header and sign.
+        return matching.filter { seen.insert($0.name).inserted }
+    }
+    static func cookieHeader(_ cookies: [HTTPCookie]) -> String {
+        cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+    }
+    static func isBusinessPage(_ url: URL) -> Bool {
+        guard LoginNavigation.allows(url), let host = url.host,
+              host == "cainiao.com" || host.hasSuffix(".cainiao.com"),
+              !host.contains("login"), !host.contains("passport") else { return false }
+        let path = url.path.lowercased()
+        return !path.contains("login") && !path.contains("passport") && path != "/dossoLogin".lowercased()
     }
 
     static func page(_ result: [String: Any], expectedPage: Int) throws -> CainiaoParcelPage {

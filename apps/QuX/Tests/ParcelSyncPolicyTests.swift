@@ -19,15 +19,24 @@ final class ParcelSyncPolicyTests: XCTestCase {
         XCTAssertTrue(ParcelSyncPolicy.allowedGateway(url))
         XCTAssertFalse(ParcelSyncPolicy.allowedGateway(URL(string: "https://acs.m.taobao.com.evil.test/h5/test/1.0/")!))
     }
-    func testRepeatedMainLoginReturnsStayBlockedAndIframesAreAllowed() {
-        for host in ["login.m.taobao.com", "login.taobao.com"] {
-            let url = URL(string: "https://\(host)/login.htm")!
-            for _ in 0..<10 {
-                XCTAssertTrue(ParcelSyncPolicy.blocksLoginReturn(url, mainFrame: true, passedQuickEnter: true, manualLogin: false, cookies: []))
-            }
-            XCTAssertTrue(ParcelSyncPolicy.blocksLoginReturn(url, mainFrame: true, passedQuickEnter: false, manualLogin: false, cookies: [cookie("unb")]))
-            XCTAssertFalse(ParcelSyncPolicy.blocksLoginReturn(url, mainFrame: false, passedQuickEnter: true, manualLogin: false, cookies: []))
-            XCTAssertFalse(ParcelSyncPolicy.blocksLoginReturn(url, mainFrame: true, passedQuickEnter: true, manualLogin: true, cookies: []))
+    func testManualCheckRunsOnlyOnCainiaoBusinessPage() {
+        XCTAssertTrue(ParcelSyncPolicy.isBusinessPage(URL(string: "https://page.cainiao.com/guoguo/app-myexpress-taobao/")!))
+        for raw in ["https://login.m.taobao.com/login.htm", "https://cnlogin.cainiao.com/login", "https://page.cainiao.com/passport/auth", "https://cnlogin.cainiao.com/doSsoLogin"] {
+            XCTAssertFalse(ParcelSyncPolicy.isBusinessPage(URL(string: raw)!))
+        }
+    }
+    func testSameNameCookiesUseOneTargetDomainWinnerForHeaderAndSign() {
+        func token(_ value: String, domain: String, path: String = "/") -> HTTPCookie {
+            HTTPCookie(properties: [.name: "_m_h5_tk", .value: value, .domain: domain, .path: path])!
+        }
+        let endpoint = URL(string: "https://acs.m.cainiao.com/h5/test/1.0/")!
+        let input = [token("taobao_123", domain: ".taobao.com"), token("root_123", domain: ".cainiao.com"), token("target_123", domain: "acs.m.cainiao.com"), token("private_123", domain: ".cainiao.com", path: "/private")]
+        for values in [input, Array(input.reversed())] {
+            let selected = ParcelSyncPolicy.cookies(values, for: endpoint)
+            XCTAssertEqual(selected.count, 1)
+            XCTAssertEqual(selected.first?.value, "target_123")
+            XCTAssertEqual(ParcelSyncPolicy.cookieHeader(selected), "_m_h5_tk=target_123")
+            XCTAssertEqual(CainiaoLogin.signingToken(selected.first?.value), "target")
         }
     }
     func testEmptyAPIPageAndPickupMapping() throws {

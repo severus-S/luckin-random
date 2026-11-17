@@ -367,6 +367,10 @@ private struct CainiaoSheet: View {
                     }
                     Menu {
                         Button("登录帮助与诊断", systemImage: "stethoscope") { showDiagnostics = true }
+                        Button("检查菜鸟会话", systemImage: "checkmark.shield") {
+                            status = nil
+                            browser.verifySession()
+                        }
                         Button("重新登录", systemImage: "person.crop.circle.badge.checkmark") {
                             status = nil
                             browser.login()
@@ -400,7 +404,7 @@ private struct CainiaoSheet: View {
                         Text(browser.diagnostics.isEmpty ? "尚未捕获登录事件。请返回登录页操作后再查看。" : browser.diagnostics.joined(separator: "\n"))
                             .font(.caption.monospaced()).textSelection(.enabled)
                         Button("复制诊断") {
-                            UIPasteboard.general.string = "取X 0.8.11 (18)\n" + browser.diagnostics.joined(separator: "\n")
+                            UIPasteboard.general.string = "取X 0.8.12 (19)\n" + browser.diagnostics.joined(separator: "\n")
                         }.disabled(browser.diagnostics.isEmpty)
                     }.padding()
                 }

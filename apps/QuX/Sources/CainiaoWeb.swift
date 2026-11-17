@@ -48,15 +48,11 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     private var activeNavigation: WKNavigation?
     private var loginAttempt: CainiaoLogin?
     private var verificationTask: Task<Void, Never>?
-    private var hasPassedQuickEnter = false
-    private var explicitLoginRequested = false
     private var latestMainURL: URL?
     private var warmupRequest: URLRequest?
     private var didWarmup = false
     private var requestSequence = 0
     private static var cleanupTask: Task<Void, Never>?
-    private var cookieJobs: [() -> Void] = []
-    private var cookieJobRunning = false
 
     init(page: CainiaoPage) {
         self.page = page
@@ -122,8 +118,6 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     func login() {
-        hasPassedQuickEnter = false
-        explicitLoginRequested = true
         verificationTask?.cancel()
         verificationTask = nil
         let attempt = CainiaoLogin()
@@ -217,105 +211,23 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             decisionHandler(.cancel)
             return
         }
-        if let url = action.request.url, let fallback = LoginNavigation.webFallback(url),
-           action.targetFrame?.isMainFrame != false {
-            decisionHandler(.cancel)
-            var request = action.request
-            request.url = fallback
-            load(request)
-            return
-        }
-        guard let url = action.request.url,
-              CainiaoPage.allows(url) || url.absoluteString == "about:blank" else {
-            if action.targetFrame?.isMainFrame != false {
-                loading = false
-                message = LoginNavigation.blockedMessage(action.request.url)
-            }
-            decisionHandler(.cancel)
-            return
-        }
-        if CookieCompatibility.isQuickEnterHandoff(url, source: action.sourceFrame.request.url ?? latestMainURL) {
-            hasPassedQuickEnter = true
-            explicitLoginRequested = false
-        }
-        if CainiaoLogin.isSSO(url), let attempt = loginAttempt, !attempt.ownsSSO(url) {
-            loading = false
-            message = "登录交接与本次请求不匹配，请从菜单重新登录。"
-            decisionHandler(.cancel)
-            return
-        }
-        if let attempt = loginAttempt, action.targetFrame?.isMainFrame == true, attempt.isReturn(url) {
-            // The SSO response has set its cookies. Do not render the profile SPA:
-            // its unrelated auto-login can race our read-only session check.
-            decisionHandler(.cancel)
-            verifySession(attempt: attempt)
-            return
-        }
-        let store = webView.configuration.websiteDataStore.httpCookieStore
-        store.getAllCookies { [self] cookies in
-            if ParcelSyncPolicy.blocksLoginReturn(url, mainFrame: action.targetFrame?.isMainFrame == true,
-                passedQuickEnter: hasPassedQuickEnter, manualLogin: explicitLoginRequested, cookies: cookies) {
-                print("[SSO-Debug] blocked main-frame login return \(url.absoluteString)")
-                loading = false
-                decisionHandler(.cancel)
-                return
-            }
+        // HTTP/HTTPS login and SSO transitions are owned by the website.
+        // No Cookie check, return-page cancellation or login-domain block here.
+        if let url = action.request.url {
             if LoginNavigation.isLogin(url) { showingLogin = true }
             if action.targetFrame?.isMainFrame == true { latestMainURL = url }
-            decisionHandler(.allow)
         }
+        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        var responseCookies: [HTTPCookie] = []
-        if let response = navigationResponse.response as? HTTPURLResponse, let url = response.url {
-            var headers: [String: String] = [:]
-            for (key, value) in response.allHeaderFields {
-                headers[String(describing: key)] = String(describing: value)
-            }
-            responseCookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
-        }
-        synchronizeCookies(in: webView.configuration.websiteDataStore.httpCookieStore,
-                           responseCookies: responseCookies) {
-            decisionHandler(.allow)
-        }
-    }
-
-    private func synchronizeCookies(in store: WKHTTPCookieStore, responseCookies: [HTTPCookie] = [],
-                                    completion: @escaping () -> Void) {
-        cookieJobs.append { [self] in
-            let group = DispatchGroup()
-            // Only response-owned cookies, with original domain/path/properties.
-            for cookie in responseCookies {
-                group.enter()
-                store.setCookie(cookie) { group.leave() }
-            }
-            group.notify(queue: .main) { [self] in
-                completion()
-                cookieJobRunning = false
-                runNextCookieJob()
-            }
-        }
-        runNextCookieJob()
+        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
         print("[SSO-Debug] serverRedirect [MainFrame: true] \(webView.url?.absoluteString ?? "nil")")
-        if let url = webView.url {
-            if CookieCompatibility.isQuickEnterHandoff(url, source: latestMainURL) {
-                hasPassedQuickEnter = true
-                explicitLoginRequested = false
-            }
-            latestMainURL = url
-        }
-    }
-
-    private func runNextCookieJob() {
-        guard !cookieJobRunning, !cookieJobs.isEmpty else { return }
-        cookieJobRunning = true
-        let job = cookieJobs.removeFirst()
-        job()
+        latestMainURL = webView.url
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -339,7 +251,10 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         canGoBack = webView.canGoBack
         canSync = isParcelPage
         if let attempt = loginAttempt, let url = webView.url, attempt.isReturn(url) {
-            verifySession(attempt: attempt)
+            // SSO return has actually finished; do not run a background MTOP
+            // account check while the website is still completing login.
+            loginAttempt = nil
+            reload()
             return
         }
         if loginAttempt == nil && webView.url?.host == page.url.host && webView.url?.path == page.url.path {
@@ -394,23 +309,23 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         self.message = message
     }
 
-    private func verifySession(attempt: CainiaoLogin) {
-        guard verificationTask == nil else { return }
-        loading = true
-        canSync = false
-        message = "正在校验菜鸟业务会话…"
+    func verifySession() {
+        guard verificationTask == nil,
+              let currentURL = webView.url,
+              ParcelSyncPolicy.isBusinessPage(currentURL) else { return }
         verificationTask = Task { @MainActor in
+            defer { verificationTask = nil }
             do {
-                try await CainiaoSession.verify(store: webView.configuration.websiteDataStore.httpCookieStore)
-                guard !Task.isCancelled, loginAttempt?.state == attempt.state else { return }
-                verificationTask = nil
-                reload()
+                try await CainiaoSession.verify(
+                    store: webView.configuration.websiteDataStore.httpCookieStore)
+                guard !Task.isCancelled, webView.url == currentURL else { return }
+                message = "菜鸟业务会话校验通过。"
             } catch {
-                guard !Task.isCancelled, loginAttempt?.state == attempt.state else { return }
-                verificationTask = nil
-                loading = false
-                let code = (error as? CainiaoSession.Failure)?.code ?? "NETWORK_\((error as NSError).code)"
-                message = "菜鸟校验未通过（\(code)）。可返回业务网页继续登录；请反馈此错误码。"
+                guard !Task.isCancelled, webView.url == currentURL,
+                      webView.url.map(ParcelSyncPolicy.isBusinessPage) == true else { return }
+                let code = (error as? CainiaoSession.Failure)?.code
+                    ?? "NETWORK_\((error as NSError).code)"
+                message = "菜鸟校验未通过（\(code)）。已保留当前网页。"
             }
         }
     }
@@ -432,8 +347,6 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         let ready = ParcelSyncPolicy.hasSyncCookie(cookies) && context["home"] as? Bool == true
         print("[SSO-Debug] sync native; pageReady=\(ready); empty=\(context["empty"] as? Bool == true)")
         if ready {
-            hasPassedQuickEnter = true
-            explicitLoginRequested = false
             showingLogin = false
             if context["empty"] as? Bool == true { return [] }
         }
