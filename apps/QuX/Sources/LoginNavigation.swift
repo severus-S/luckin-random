@@ -12,7 +12,7 @@ enum LoginNavigation {
     static func isLogin(_ url: URL) -> Bool {
         guard allows(url), let host = url.host?.lowercased() else { return false }
         return ["login.m.taobao.com", "login.taobao.com", "cnlogin.cainiao.com"].contains(host)
-            && ["/login.htm", "/login", "/mini_login.htm"].contains(url.path)
+            && ["/login.htm", "/login", "/mini_login.htm", "/havanaone/login/login.htm"].contains(url.path)
     }
 
     // Widget login returns through an iframe message page. A top-level login needs

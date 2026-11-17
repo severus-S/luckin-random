@@ -41,7 +41,7 @@ struct GlassPage<Content: View>: View {
     var body: some View {
         ScrollView {
             GlassEffectContainer(spacing: 16) {
-                VStack(alignment: .leading, spacing: 20) { content }
+                LazyVStack(alignment: .leading, spacing: 20) { content }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 16)
             }

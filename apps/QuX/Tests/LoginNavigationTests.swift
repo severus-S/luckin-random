@@ -42,4 +42,13 @@ final class LoginNavigationTests: XCTestCase {
         let query = URLComponents(url: result, resolvingAgainstBaseURL: false)!.queryItems!
         XCTAssertEqual(query.first { $0.name == "redirectURL" }?.value, destination.absoluteString)
     }
+
+    func testCurrentOfficialHavanaLoginCanLeaveTheWidgetFrame() throws {
+        let destination = URL(string: "https://page.cainiao.com/cn-app-web/identity-code/index.html#/")!
+        let login = URL(string: "https://login.m.taobao.com/havanaone/login/login.htm?bizName=taobao&redirectURL=old")!
+        let promoted = try XCTUnwrap(LoginNavigation.topLevelLogin(login, returningTo: destination))
+        let query = URLComponents(url: promoted, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(query.first { $0.name == "redirectURL" }?.value, destination.absoluteString)
+        XCTAssertEqual(query.first { $0.name == "bizName" }?.value, "taobao")
+    }
 }
