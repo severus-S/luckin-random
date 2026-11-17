@@ -30,23 +30,18 @@ struct CainiaoPage: Identifiable {
     }
 
     static func allows(_ url: URL) -> Bool {
-        guard url.scheme == "https", url.user == nil, url.password == nil,
-              url.port == nil || url.port == 443, let host = url.host?.lowercased() else {
-            return false
-        }
-        return ["cainiao.com", "taobao.com", "tmall.com", "alipay.com", "alibaba.com"].contains {
-            host == $0 || host.hasSuffix("." + $0)
-        }
+        LoginNavigation.allows(url)
     }
 }
 
 @MainActor
-final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate {
+final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
     let webView: WKWebView
     @Published var loading = true
     @Published var canGoBack = false
     @Published var canSync = false
     @Published var message: String?
+    @Published var showingLogin = false
 
     private let page: CainiaoPage
 
@@ -54,17 +49,27 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate {
         self.page = page
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
         reload()
     }
 
     func reload() {
         message = nil
+        showingLogin = false
         webView.load(URLRequest(url: page.url, timeoutInterval: 30))
+    }
+
+    func login() {
+        message = nil
+        showingLogin = true
+        webView.load(URLRequest(url: LoginNavigation.loginURL(returningTo: page.url), timeoutInterval: 30))
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
@@ -74,6 +79,15 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate {
             if action.targetFrame?.isMainFrame != false { message = "该网页要求打开外部应用或其他站点。" }
             decisionHandler(.cancel)
             return
+        }
+        if LoginNavigation.isLogin(url) {
+            showingLogin = true
+            if action.targetFrame?.isMainFrame != true,
+               let topLevel = LoginNavigation.topLevelLogin(url, returningTo: page.url) {
+                decisionHandler(.cancel)
+                webView.load(URLRequest(url: topLevel, timeoutInterval: 30))
+                return
+            }
         }
         if action.targetFrame == nil {
             decisionHandler(.cancel)
@@ -92,6 +106,32 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate {
         loading = false
         canGoBack = webView.canGoBack
         canSync = isParcelPage
+        if webView.url?.host == page.url.host && webView.url?.path == page.url.path {
+            showingLogin = false
+            message = nil
+        }
+    }
+
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard let url = navigationAction.request.url, CainiaoPage.allows(url) else { return nil }
+        if let login = LoginNavigation.topLevelLogin(url, returningTo: page.url) {
+            showingLogin = true
+            webView.load(URLRequest(url: login))
+        } else {
+            webView.load(navigationAction.request)
+        }
+        return nil
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        reload()
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        self.message = String(message.prefix(180))
+        completionHandler()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,

@@ -33,6 +33,18 @@ def generate(app):
         entries += [f'{ref} = {{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "{rel}"; sourceTree = "<group>"; }};', f'{build} = {{isa = PBXBuildFile; fileRef = {ref}; }};']
         refs.append(ref)
         builds.append(build)
+    resources = []
+    catalogs = sorted(folder.glob("Resources/*.xcassets"))
+    for i, path in enumerate(catalogs):
+        ref, build = uid(10000+i*2), uid(10001+i*2)
+        rel = path.relative_to(folder).as_posix()
+        assert re.fullmatch(r"[A-Za-z0-9_./-]+", rel), "Unsafe asset path"
+        entries += [f'{ref} = {{isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "{rel}"; sourceTree = "<group>"; }};', f'{build} = {{isa = PBXBuildFile; fileRef = {ref}; }};']
+        refs.append(ref)
+        resources.append(build)
+    icon_settings = ""
+    if any((path / "AppIcon.appiconset/Contents.json").is_file() for path in catalogs):
+        icon_settings = "ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;"
     settings = f'''CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = "";
         PRODUCT_BUNDLE_IDENTIFIER = "{c['bundleId']}"; PRODUCT_NAME = "{app}";
         SDKROOT = iphoneos; SUPPORTED_PLATFORMS = iphoneos; ARCHS = arm64;
@@ -42,15 +54,17 @@ def generate(app):
         INFOPLIST_KEY_UILaunchScreen_Generation = YES;
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
         INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-        MARKETING_VERSION = {c['version']}; CURRENT_PROJECT_VERSION = 1;'''
+        MARKETING_VERSION = {c['version']}; CURRENT_PROJECT_VERSION = 1;
+        {icon_settings}'''
     objects = f'''
 {uid(1)} = {{isa = PBXProject; buildConfigurationList = {uid(8)}; compatibilityVersion = "Xcode 14.0"; mainGroup = {uid(2)}; productRefGroup = {uid(3)}; projectDirPath = ""; targets = ({uid(4)},); }};
 {uid(2)} = {{isa = PBXGroup; children = ({','.join(refs)},{uid(3)},); sourceTree = "<group>"; }};
 {uid(3)} = {{isa = PBXGroup; children = ({uid(5)},); name = Products; sourceTree = "<group>"; }};
-{uid(4)} = {{isa = PBXNativeTarget; buildConfigurationList = {uid(9)}; buildPhases = ({uid(6)}, {uid(7)},); buildRules = (); dependencies = (); name = "{app}"; productName = "{app}"; productReference = {uid(5)}; productType = "com.apple.product-type.application"; }};
+{uid(4)} = {{isa = PBXNativeTarget; buildConfigurationList = {uid(9)}; buildPhases = ({uid(6)}, {uid(7)}, {uid(12)},); buildRules = (); dependencies = (); name = "{app}"; productName = "{app}"; productReference = {uid(5)}; productType = "com.apple.product-type.application"; }};
 {uid(5)} = {{isa = PBXFileReference; explicitFileType = wrapper.application; path = "{app}.app"; sourceTree = BUILT_PRODUCTS_DIR; }};
 {uid(6)} = {{isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ({','.join(builds)},); runOnlyForDeploymentPostprocessing = 0; }};
 {uid(7)} = {{isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; }};
+{uid(12)} = {{isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ({','.join(resources)},); runOnlyForDeploymentPostprocessing = 0; }};
 {uid(8)} = {{isa = XCConfigurationList; buildConfigurations = ({uid(10)},); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; }};
 {uid(9)} = {{isa = XCConfigurationList; buildConfigurations = ({uid(11)},); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; }};
 {uid(10)} = {{isa = XCBuildConfiguration; buildSettings = {{CLANG_ENABLE_MODULES = YES; }}; name = Release; }};

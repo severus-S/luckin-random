@@ -35,7 +35,8 @@ struct ContentView: View {
             NavigationStack { settings }
                 .tabItem { Label("设置", systemImage: "gearshape") }
         }
-        .tint(.indigo)
+        .tint(.blue)
+        .tabBarMinimizeBehavior(.onScrollDown)
         .preferredColorScheme(colorScheme)
         .sheet(item: $page) { route in
             CainiaoSheet(page: route, save: save)
@@ -72,8 +73,8 @@ struct ContentView: View {
     private var parcelList: some View {
         let term = search.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered = parcels.filter { $0.group == group && $0.matches(term) }
-        return List {
-            Section {
+        return GlassPage {
+            VStack(alignment: .leading, spacing: 12) {
                 Picker("包裹状态", selection: $group) {
                     ForEach(ParcelGroup.allCases) { group in
                         Text(group.rawValue).tag(group)
@@ -87,14 +88,24 @@ struct ContentView: View {
                 }
             }
             if filtered.isEmpty {
-                ContentUnavailableView(
-                    term.isEmpty ? (snapshot == nil ? "同步你的包裹" : "暂无\(group.rawValue)包裹") : "没有匹配的包裹",
-                    systemImage: term.isEmpty ? "shippingbox" : "magnifyingglass",
-                    description: snapshot == nil && term.isEmpty ? Text("在菜鸟网页登录后同步。") : nil
-                )
+                GlassCard {
+                    VStack(spacing: 16) {
+                        ContentUnavailableView(
+                            term.isEmpty ? (snapshot == nil ? "同步你的包裹" : "暂无\(group.rawValue)包裹") : "没有匹配的包裹",
+                            systemImage: term.isEmpty ? "shippingbox" : "magnifyingglass",
+                            description: snapshot == nil && term.isEmpty ? Text("在菜鸟网页登录后同步。") : nil
+                        )
+                        if snapshot == nil && term.isEmpty {
+                            Button("登录并同步包裹", systemImage: "arrow.clockwise") { page = .parcels }
+                                .buttonStyle(.glassProminent)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             } else if group == .pickup {
                 ForEach(PickupSection.grouped(filtered)) { section in
-                    Section(section.name) { ForEach(section.parcels, content: parcelRow) }
+                    Text(section.name).font(.headline).padding(.horizontal, 4)
+                    ForEach(section.parcels, content: parcelRow)
                 }
             } else {
                 ForEach(filtered, content: parcelRow)
@@ -130,35 +141,46 @@ struct ContentView: View {
 
     private func parcelRow(_ parcel: Parcel) -> some View {
         NavigationLink {
-            List {
+            GlassPage {
                 if !parcel.pickupCode.isEmpty {
-                    Section("取件码") {
-                        Text(parcel.pickupCode)
-                            .font(.system(.largeTitle, design: .monospaced, weight: .bold))
-                            .textSelection(.enabled)
-                        Button("复制取件码") {
-                            UIPasteboard.general.setItems(
-                                [[UTTypePlainText: parcel.pickupCode]], options: [.localOnly: true]
-                            )
-                            notice = "已复制取件码。"
-                        }
-                        Button("分享取件码") {
-                            shareSelection = PickupSection.grouped([parcel])
+                    GlassCard {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("取件码").font(.subheadline).foregroundStyle(.secondary)
+                            Text(parcel.pickupCode)
+                                .font(.system(.largeTitle, design: .monospaced, weight: .bold))
+                                .textSelection(.enabled)
+                            HStack(spacing: 12) {
+                                Button("复制", systemImage: "document.on.document") {
+                                    UIPasteboard.general.setItems(
+                                        [[UTTypePlainText: parcel.pickupCode]], options: [.localOnly: true]
+                                    )
+                                    notice = "已复制取件码。"
+                                }
+                                Button("分享", systemImage: "square.and.arrow.up") {
+                                    shareSelection = PickupSection.grouped([parcel])
+                                }
+                            }
                         }
                     }
                 }
-                Section("包裹信息") {
-                    if !parcel.carrier.isEmpty { LabeledContent("快递公司", value: parcel.carrier) }
-                    if !parcel.mailNo.isEmpty {
-                        LabeledContent("运单号", value: parcel.mailNo).textSelection(.enabled)
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("包裹信息").font(.headline)
+                        if !parcel.carrier.isEmpty { LabeledContent("快递公司", value: parcel.carrier) }
+                        if !parcel.mailNo.isEmpty {
+                            LabeledContent("运单号", value: parcel.mailNo).textSelection(.enabled)
+                        }
+                        if !parcel.station.isEmpty {
+                            LabeledContent("取件点", value: parcel.station)
+                            Button("在地图中搜索取件点") { openStation(parcel.station) }
+                        }
+                        LabeledContent("状态", value: parcel.displayStatus)
+                        if !parcel.description.isEmpty { Text(parcel.description) }
+                        if let time = parcel.updatedAt {
+                            Text(time, format: .dateTime.month().day().hour().minute())
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
-                    if !parcel.station.isEmpty {
-                        LabeledContent("取件点", value: parcel.station)
-                        Button("在地图中搜索取件点") { openStation(parcel.station) }
-                    }
-                    LabeledContent("状态", value: parcel.displayStatus)
-                    if !parcel.description.isEmpty { Text(parcel.description) }
-                    if let time = parcel.updatedAt { Text(time, format: .dateTime.month().day().hour().minute()) }
                 }
                 if !parcel.mailNo.isEmpty {
                     Button("查看官方物流详情") {
@@ -169,48 +191,77 @@ struct ContentView: View {
             .navigationTitle(parcel.label)
             .navigationBarTitleDisplayMode(.inline)
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(parcel.label).font(.headline)
-                if !parcel.pickupCode.isEmpty {
-                    Text(parcel.pickupCode)
-                        .font(.system(.title2, design: .monospaced, weight: .semibold))
-                        .foregroundStyle(Color.indigo)
-                        .accessibilityLabel("取件码 \(parcel.pickupCode)")
+            GlassCard {
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(parcel.label).font(.headline)
+                        if !parcel.pickupCode.isEmpty {
+                            Text(parcel.pickupCode)
+                                .font(.system(.title2, design: .monospaced, weight: .semibold))
+                                .foregroundStyle(Color.blue)
+                                .accessibilityLabel("取件码 \(parcel.pickupCode)")
+                        }
+                        Text([parcel.carrier, parcel.displayStatus].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                 }
-                Text([parcel.carrier, parcel.displayStatus].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
             }
-            .padding(.vertical, 4)
+            .foregroundStyle(.primary)
         }
+        .buttonStyle(.plain)
     }
 
     private var account: some View {
-        List {
-            Section {
-                Button { page = .parcels } label: {
-                    Label("网页登录与同步", systemImage: "arrow.trianglehead.clockwise")
+        GlassPage {
+            GlassCard {
+                VStack(alignment: .leading, spacing: 18) {
+                    Label("菜鸟账号", systemImage: "person.crop.circle.fill").font(.title2.bold())
+                    Text("连接账号，集中查看包裹与取件信息。").foregroundStyle(.secondary)
+                    Button("网页登录与同步", systemImage: "arrow.clockwise") { page = .parcels }
+                        .buttonStyle(.glassProminent)
                 }
-                Button { page = .identity } label: {
-                    Label("菜鸟身份码", systemImage: "barcode")
-                }
-                Button { page = .account } label: {
-                    Label("菜鸟账号主页", systemImage: "person.crop.circle")
-                }
-            } footer: {
-                Text("登录和验证由官方网页处理。切换账号前可在设置中清除本机数据。")
             }
+            GlassCard {
+                VStack(alignment: .leading, spacing: 18) {
+                    Button { page = .parcels } label: {
+                        Label("我的快递", systemImage: "shippingbox")
+                    }
+                    Button { page = .identity } label: {
+                        Label("菜鸟身份码", systemImage: "barcode")
+                    }
+                    Button { page = .account } label: {
+                        Label("菜鸟账号主页", systemImage: "person.crop.circle")
+                    }
+                    Button { page = .pending } label: {
+                        Label("待取包裹", systemImage: "tray")
+                    }
+                }
+            }
+            Text("登录和验证由官方网页处理。切换账号前可在设置中清除本机数据。")
+                .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 4)
         }
         .navigationTitle("账号")
     }
 
     private var settings: some View {
-        Form {
-            Picker("外观", selection: $appearance) {
-                ForEach(["跟随系统", "浅色", "深色"], id: \.self) { Text($0) }
+        GlassPage {
+            GlassCard {
+                VStack(alignment: .leading, spacing: 18) {
+                    Picker("外观", selection: $appearance) {
+                        ForEach(["跟随系统", "浅色", "深色"], id: \.self) { Text($0) }
+                    }
+                    .pickerStyle(.menu)
+                    Divider()
+                    LabeledContent("版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.8.2")
+                }
             }
-            Button("清除本机数据", role: .destructive) { confirmClear = true }
-            LabeledContent("版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.8.1")
+            GlassCard {
+                Button("清除本机数据", role: .destructive) { confirmClear = true }
+            }
         }
         .navigationTitle("设置")
     }
@@ -267,10 +318,24 @@ private struct CainiaoSheet: View {
             VStack(spacing: 0) {
                 if let message = status ?? browser.message {
                     Text(message).font(.footnote).frame(maxWidth: .infinity).padding(10)
-                        .background(.thinMaterial)
+                        .glassEffect(in: .rect(cornerRadius: 16))
+                        .padding(.horizontal, 12)
                 }
                 if browser.loading { ProgressView().padding(8) }
                 WebSurface(webView: browser.webView)
+                    .clipShape(.rect(cornerRadius: 24))
+                    .padding(.horizontal, 8)
+            }
+            .background { GlassBackdrop() }
+            .safeAreaInset(edge: .bottom) {
+                if browser.showingLogin {
+                    Button("返回\(page.title)", systemImage: "arrow.uturn.backward") {
+                        status = nil
+                        browser.reload()
+                    }
+                    .buttonStyle(.glass)
+                    .padding(12)
+                }
             }
             .navigationTitle(page.title)
             .navigationBarTitleDisplayMode(.inline)
@@ -299,6 +364,19 @@ private struct CainiaoSheet: View {
                         Button("同步") { startSync() }
                             .disabled(!browser.canSync || syncTask != nil)
                     }
+                    Menu {
+                        Button("重新登录", systemImage: "person.crop.circle.badge.checkmark") {
+                            status = nil
+                            browser.login()
+                        }
+                        Button("返回\(page.title)", systemImage: "arrow.uturn.backward") {
+                            status = nil
+                            browser.reload()
+                        }
+                    } label: {
+                        Label("登录操作", systemImage: "ellipsis")
+                    }
+                    .disabled(syncTask != nil)
                 }
             }
         }
@@ -344,14 +422,17 @@ private struct PickupShareView: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            GlassPage {
                 ForEach(sections) { section in
-                    Section(section.name) {
-                        ForEach(section.parcels) { parcel in
-                            HStack {
-                                Text(parcel.pickupCode).font(.system(.headline, design: .monospaced))
-                                Spacer()
-                                Text(parcel.carrier).foregroundStyle(.secondary)
+                    GlassCard {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text(section.name).font(.headline)
+                            ForEach(section.parcels) { parcel in
+                                HStack {
+                                    Text(parcel.pickupCode).font(.system(.headline, design: .monospaced))
+                                    Spacer()
+                                    Text(parcel.carrier).foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
