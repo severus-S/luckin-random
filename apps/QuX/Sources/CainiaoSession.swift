@@ -6,7 +6,10 @@ import WebKit
 // remain in WKHTTPCookieStore; no token or response is logged or persisted here.
 @MainActor
 enum CainiaoSession {
-    enum Failure: Error { case unavailable, invalidSession }
+    enum Failure: Error {
+        case rejected(String)
+        var code: String { switch self { case let .rejected(code): return code } }
+    }
 
     static func verify(store: WKHTTPCookieStore) async throws {
         let configuration = URLSessionConfiguration.ephemeral
@@ -27,7 +30,7 @@ enum CainiaoSession {
                 return (host == domain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + domain)))
                     && matchesPath && (cookie.expiresDate == nil || cookie.expiresDate! > Date())
             }.sorted { $0.path.count > $1.path.count }
-            let token = cookies.first { $0.name == "_m_h5_tk" }?.value.components(separatedBy: "_").first ?? ""
+            let token = CainiaoLogin.signingToken(cookies.first { $0.name == "_m_h5_tk" }?.value)
             let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000))
             let signature = Insecure.MD5.hash(data: Data("\(token)&\(timestamp)&12574478&\(payload)".utf8))
                 .map { String(format: "%02x", $0) }.joined()
@@ -42,11 +45,12 @@ enum CainiaoSession {
             request.setValue("cainiao_c_user", forHTTPHeaderField: "x-biz-type")
             request.setValue("env=cainiao_c_user", forHTTPHeaderField: "x-biz-info")
             request.setValue("zh_CN", forHTTPHeaderField: "cn_account_lang")
-            request.setValue("QuX/0.8.6 (iOS)", forHTTPHeaderField: "User-Agent")
+            request.setValue("QuX/0.8.7 (iOS)", forHTTPHeaderField: "User-Agent")
             for (key, value) in HTTPCookie.requestHeaderFields(with: cookies) { request.setValue(value, forHTTPHeaderField: key) }
             let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  data.count < 2_000_000 else { throw Failure.unavailable }
+            guard let http = response as? HTTPURLResponse else { throw Failure.rejected("INVALID_HTTP_RESPONSE") }
+            guard http.statusCode == 200 else { throw Failure.rejected("HTTP_\(http.statusCode)") }
+            guard data.count < 2_000_000 else { throw Failure.rejected("RESPONSE_TOO_LARGE") }
             var headers: [String: String] = [:]
             for (key, value) in http.allHeaderFields { headers[String(describing: key)] = String(describing: value) }
             for cookie in HTTPCookie.cookies(withResponseHeaderFields: headers, for: endpoint) {
@@ -54,13 +58,13 @@ enum CainiaoSession {
                 guard domain == "cainiao.com" || domain.hasSuffix(".cainiao.com") else { continue }
                 await store.save(cookie)
             }
-            guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Failure.unavailable }
+            guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Failure.rejected("INVALID_RESPONSE") }
             if CainiaoLogin.hasBusinessSession(result) { return }
-            let codes = (result["ret"] as? [String] ?? []).joined(separator: " ")
-            if attempt == 0 && (codes.contains("TOKEN_EMPTY") || codes.contains("TOKEN_EXPIRED")) { continue }
-            throw Failure.invalidSession
+            let code = CainiaoLogin.diagnosticCode(result)
+            if attempt == 0 && CainiaoLogin.shouldRetryToken(code) { continue }
+            throw Failure.rejected(code)
         }
-        throw Failure.invalidSession
+        throw Failure.rejected("TOKEN_RETRY_EXHAUSTED")
     }
 }
 

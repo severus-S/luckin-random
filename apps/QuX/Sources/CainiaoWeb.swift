@@ -46,7 +46,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     private let page: CainiaoPage
     private var activeNavigation: WKNavigation?
     private var loginAttempt: CainiaoLogin?
-    private var verifyingSession = false
+    private var verificationTask: Task<Void, Never>?
 
     init(page: CainiaoPage) {
         self.page = page
@@ -64,12 +64,16 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     func reload() {
+        verificationTask?.cancel()
+        verificationTask = nil
         loginAttempt = nil
         showingLogin = false
         load(URLRequest(url: page.url, timeoutInterval: 30))
     }
 
     func login() {
+        verificationTask?.cancel()
+        verificationTask = nil
         let attempt = CainiaoLogin()
         loginAttempt = attempt
         showingLogin = true
@@ -108,14 +112,16 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             decisionHandler(.cancel)
             return
         }
+        if let attempt = loginAttempt, action.targetFrame?.isMainFrame == true, attempt.isReturn(url) {
+            // The SSO response has set its cookies. Do not render the profile SPA:
+            // its unrelated auto-login can race our read-only session check.
+            decisionHandler(.cancel)
+            verifySession(attempt: attempt)
+            return
+        }
         if LoginNavigation.isLogin(url) {
-            if loginAttempt == nil {
-                decisionHandler(.cancel)
-                login()
-                return
-            }
-            // The Cainiao parent receives the iframe's loginResult and performs
-            // doSsoLogin. Preserve both the frame and its server return address.
+            // Business pages can require their own Taobao login. Keep the parent,
+            // target frame and return address even when no Cainiao attempt exists.
             showingLogin = true
         }
         if action.targetFrame == nil {
@@ -163,13 +169,9 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             message = LoginNavigation.blockedMessage(original)
             return nil
         }
-        if LoginNavigation.isLogin(url) && loginAttempt == nil {
-            login()
-        } else {
-            var request = navigationAction.request
-            request.url = url
-            load(request)
-        }
+        var request = navigationAction.request
+        request.url = url
+        load(request)
         return nil
     }
 
@@ -208,20 +210,22 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     private func verifySession(attempt: CainiaoLogin) {
-        guard !verifyingSession else { return }
-        verifyingSession = true
+        guard verificationTask == nil else { return }
         loading = true
+        canSync = false
         message = "正在校验菜鸟业务会话…"
-        Task { @MainActor in
-            defer { verifyingSession = false }
+        verificationTask = Task { @MainActor in
             do {
                 try await CainiaoSession.verify(store: webView.configuration.websiteDataStore.httpCookieStore)
-                guard loginAttempt?.state == attempt.state else { return }
+                guard !Task.isCancelled, loginAttempt?.state == attempt.state else { return }
+                verificationTask = nil
                 reload()
             } catch {
-                guard loginAttempt?.state == attempt.state else { return }
+                guard !Task.isCancelled, loginAttempt?.state == attempt.state else { return }
+                verificationTask = nil
                 loading = false
-                message = "菜鸟会话校验未完成，请从菜单重新登录。（\(error is CainiaoSession.Failure ? "未建立业务会话" : "连接未完成")）"
+                let code = (error as? CainiaoSession.Failure)?.code ?? "NETWORK_\((error as NSError).code)"
+                message = "菜鸟校验未通过（\(code)）。可返回业务网页继续登录；请反馈此错误码。"
             }
         }
     }

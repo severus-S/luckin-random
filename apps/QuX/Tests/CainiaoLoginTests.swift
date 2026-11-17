@@ -50,4 +50,21 @@ final class CainiaoLoginTests: XCTestCase {
         XCTAssertFalse(CainiaoLogin.hasBusinessSession(response("合成测试用户", code: "FAIL_SYS_SESSION_EXPIRED")))
         XCTAssertFalse(CainiaoLogin.hasBusinessSession(["ret": ["SUCCESS"], "data": [:]]))
     }
+
+    func testSigningBootstrapMatchesAPKUndefTokenAndRetries() {
+        XCTAssertEqual(CainiaoLogin.signingToken(nil), "undefined")
+        XCTAssertEqual(CainiaoLogin.signingToken(""), "undefined")
+        XCTAssertEqual(CainiaoLogin.signingToken("synthetic_1234"), "synthetic")
+        for code in ["FAIL_SYS_TOKEN_EXOIRED", "FAIL_SYS_TOKEN_EXPIRED", "FAIL_SYS_TOKEN_EMPTY", "FAIL_SYS_TOKEN_INVALID"] {
+            XCTAssertTrue(CainiaoLogin.shouldRetryToken(code))
+        }
+        XCTAssertFalse(CainiaoLogin.shouldRetryToken("FAIL_SYS_SESSION_EXPIRED"))
+    }
+
+    func testDiagnosticsDistinguishSchemaFromServerFailureWithoutLeakingValues() {
+        XCTAssertEqual(CainiaoLogin.diagnosticCode(["ret": ["FAIL_SYS_SESSION_EXPIRED::private details"]]), "FAIL_SYS_SESSION_EXPIRED")
+        XCTAssertEqual(CainiaoLogin.diagnosticCode(["ret": ["SUCCESS::private details"]]), "ACCOUNT_SCHEMA_UNCONFIRMED")
+        XCTAssertEqual(CainiaoLogin.diagnosticCode(["ret": ["https://private.test/?token=secret"]]), "INVALID_RESPONSE")
+        XCTAssertEqual(CainiaoLogin.diagnosticCode([:]), "INVALID_RESPONSE")
+    }
 }

@@ -44,6 +44,22 @@ struct CainiaoLogin {
         return !nick.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !nick.contains("请登录")
     }
 
+    static func diagnosticCode(_ result: [String: Any]) -> String {
+        guard let raw = (result["ret"] as? [String])?.first?.components(separatedBy: "::").first,
+              !raw.isEmpty, raw.count <= 80,
+              raw.range(of: "^[A-Z0-9_]+$", options: .regularExpression) != nil else { return "INVALID_RESPONSE" }
+        return raw == "SUCCESS" ? "ACCOUNT_SCHEMA_UNCONFIRMED" : raw
+    }
+
+    static func signingToken(_ cookie: String?) -> String {
+        guard let cookie, !cookie.isEmpty else { return "undefined" }
+        return cookie.components(separatedBy: "_").first ?? "undefined"
+    }
+
+    static func shouldRetryToken(_ code: String) -> Bool {
+        ["TOKEN_EMPTY", "TOKEN_EXPIRED", "TOKEN_EXOIRED", "TOKEN_INVALID"].contains { code.contains($0) }
+    }
+
     private func value(_ key: String, in url: URL) -> String? {
         let matches = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.filter { $0.name == key } ?? []
         return matches.count == 1 ? matches[0].value : nil
