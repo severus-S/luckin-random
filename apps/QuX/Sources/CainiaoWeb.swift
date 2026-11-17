@@ -45,18 +45,16 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     private let page: CainiaoPage
     private var activeNavigation: WKNavigation?
+    private var loginAttempt: CainiaoLogin?
+    private var verifyingSession = false
 
     init(page: CainiaoPage) {
         self.page = page
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: LoginCompletion.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        )
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
-        configuration.userContentController.add(WeakLoginCompletionHandler(owner: self), name: "quxLoginCompletion")
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -66,13 +64,16 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     func reload() {
+        loginAttempt = nil
         showingLogin = false
         load(URLRequest(url: page.url, timeoutInterval: 30))
     }
 
     func login() {
+        let attempt = CainiaoLogin()
+        loginAttempt = attempt
         showingLogin = true
-        load(URLRequest(url: LoginNavigation.loginURL(returningTo: page.url), timeoutInterval: 30))
+        load(URLRequest(url: attempt.loginURL, timeoutInterval: 30))
     }
 
     private func load(_ request: URLRequest) {
@@ -80,15 +81,6 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         loading = true
         canSync = false
         activeNavigation = webView.load(request)
-    }
-
-    fileprivate func loginCompleted(_ message: WKScriptMessage) {
-        guard showingLogin, message.frameInfo.isMainFrame,
-              let origin = message.frameInfo.request.url, LoginNavigation.isLogin(origin),
-              (message.body as? String) == "completed" else { return }
-        // This resumes the requested page. Its own service still validates the
-        // session, and may request further authorization or verification.
-        reload()
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
@@ -110,14 +102,21 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             decisionHandler(.cancel)
             return
         }
+        if CainiaoLogin.isSSO(url), let attempt = loginAttempt, !attempt.ownsSSO(url) {
+            loading = false
+            message = "登录交接与本次请求不匹配，请从菜单重新登录。"
+            decisionHandler(.cancel)
+            return
+        }
         if LoginNavigation.isLogin(url) {
-            showingLogin = true
-            if action.targetFrame?.isMainFrame != true,
-               let topLevel = LoginNavigation.topLevelLogin(url, returningTo: page.url) {
+            if loginAttempt == nil {
                 decisionHandler(.cancel)
-                load(URLRequest(url: topLevel, timeoutInterval: 30))
+                login()
                 return
             }
+            // The Cainiao parent receives the iframe's loginResult and performs
+            // doSsoLogin. Preserve both the frame and its server return address.
+            showingLogin = true
         }
         if action.targetFrame == nil {
             decisionHandler(.cancel)
@@ -146,7 +145,11 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         message = nil
         canGoBack = webView.canGoBack
         canSync = isParcelPage
-        if webView.url?.host == page.url.host && webView.url?.path == page.url.path {
+        if let attempt = loginAttempt, let url = webView.url, attempt.isReturn(url) {
+            verifySession(attempt: attempt)
+            return
+        }
+        if loginAttempt == nil && webView.url?.host == page.url.host && webView.url?.path == page.url.path {
             showingLogin = false
         }
     }
@@ -160,9 +163,8 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             message = LoginNavigation.blockedMessage(original)
             return nil
         }
-        if let login = LoginNavigation.topLevelLogin(url, returningTo: page.url) {
-            showingLogin = true
-            load(URLRequest(url: login))
+        if LoginNavigation.isLogin(url) && loginAttempt == nil {
+            login()
         } else {
             var request = navigationAction.request
             request.url = url
@@ -203,6 +205,25 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         canSync = false
         canGoBack = webView.canGoBack
         self.message = message
+    }
+
+    private func verifySession(attempt: CainiaoLogin) {
+        guard !verifyingSession else { return }
+        verifyingSession = true
+        loading = true
+        message = "正在校验菜鸟业务会话…"
+        Task { @MainActor in
+            defer { verifyingSession = false }
+            do {
+                try await CainiaoSession.verify(store: webView.configuration.websiteDataStore.httpCookieStore)
+                guard loginAttempt?.state == attempt.state else { return }
+                reload()
+            } catch {
+                guard loginAttempt?.state == attempt.state else { return }
+                loading = false
+                message = "菜鸟会话校验未完成，请从菜单重新登录。（\(error is CainiaoSession.Failure ? "未建立业务会话" : "连接未完成")）"
+            }
+        }
     }
 
     private var isParcelPage: Bool {
@@ -285,17 +306,4 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         clearTimeout(timer);
     }
     """#
-}
-
-@MainActor
-private final class WeakLoginCompletionHandler: NSObject, WKScriptMessageHandler {
-    weak var owner: CainiaoBrowser?
-
-    init(owner: CainiaoBrowser) {
-        self.owner = owner
-    }
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        owner?.loginCompleted(message)
-    }
 }

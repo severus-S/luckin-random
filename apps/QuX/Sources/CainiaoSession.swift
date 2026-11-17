@@ -1,0 +1,82 @@
+import Foundation
+import CryptoKit
+import WebKit
+
+// Mirrors the APK's read-only MtopClient / AccountProfile check. Credentials
+// remain in WKHTTPCookieStore; no token or response is logged or persisted here.
+@MainActor
+enum CainiaoSession {
+    enum Failure: Error { case unavailable, invalidSession }
+
+    static func verify(store: WKHTTPCookieStore) async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.timeoutIntervalForRequest = 15
+        let session = URLSession(configuration: configuration, delegate: NoSessionRedirect(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let endpoint = URL(string: "https://cn-acs.m.cainiao.com/h5/mtop.cainiao.app.e2e.engine.page.fetch.cn/1.0/")!
+        let payload = "{\"pageId\":1800,\"h5Version\":\"2\"}"
+        for attempt in 0..<2 {
+            let cookies = await store.allCookies().filter { cookie in
+                let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
+                let host = endpoint.host!
+                let path = endpoint.path
+                let cookiePath = cookie.path
+                let matchesPath = path == cookiePath || (path.hasPrefix(cookiePath) && (cookiePath.hasSuffix("/") || path.dropFirst(cookiePath.count).hasPrefix("/")))
+                return (host == domain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + domain)))
+                    && matchesPath && (cookie.expiresDate == nil || cookie.expiresDate! > Date())
+            }.sorted { $0.path.count > $1.path.count }
+            let token = cookies.first { $0.name == "_m_h5_tk" }?.value.components(separatedBy: "_").first ?? ""
+            let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000))
+            let signature = Insecure.MD5.hash(data: Data("\(token)&\(timestamp)&12574478&\(payload)".utf8))
+                .map { String(format: "%02x", $0) }.joined()
+            var parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!
+            parts.queryItems = ["jsv": "2.7.0", "appKey": "12574478", "t": timestamp, "sign": signature,
+                "api": "mtop.cainiao.app.e2e.engine.page.fetch.cn", "v": "1.0", "accountSite": "cainiao2c",
+                "type": "originaljson", "dataType": "json", "data": payload].map { URLQueryItem(name: $0.key, value: $0.value) }
+            var request = URLRequest(url: parts.url!)
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("https://page.cainiao.com", forHTTPHeaderField: "Origin")
+            request.setValue("https://page.cainiao.com/", forHTTPHeaderField: "Referer")
+            request.setValue("cainiao_c_user", forHTTPHeaderField: "x-biz-type")
+            request.setValue("env=cainiao_c_user", forHTTPHeaderField: "x-biz-info")
+            request.setValue("zh_CN", forHTTPHeaderField: "cn_account_lang")
+            request.setValue("QuX/0.8.6 (iOS)", forHTTPHeaderField: "User-Agent")
+            for (key, value) in HTTPCookie.requestHeaderFields(with: cookies) { request.setValue(value, forHTTPHeaderField: key) }
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  data.count < 2_000_000 else { throw Failure.unavailable }
+            var headers: [String: String] = [:]
+            for (key, value) in http.allHeaderFields { headers[String(describing: key)] = String(describing: value) }
+            for cookie in HTTPCookie.cookies(withResponseHeaderFields: headers, for: endpoint) {
+                let domain = cookie.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                guard domain == "cainiao.com" || domain.hasSuffix(".cainiao.com") else { continue }
+                await store.save(cookie)
+            }
+            guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Failure.unavailable }
+            if CainiaoLogin.hasBusinessSession(result) { return }
+            let codes = (result["ret"] as? [String] ?? []).joined(separator: " ")
+            if attempt == 0 && (codes.contains("TOKEN_EMPTY") || codes.contains("TOKEN_EXPIRED")) { continue }
+            throw Failure.invalidSession
+        }
+        throw Failure.invalidSession
+    }
+}
+
+private final class NoSessionRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
+}
+
+private extension WKHTTPCookieStore {
+    func allCookies() async -> [HTTPCookie] {
+        await withCheckedContinuation { continuation in getAllCookies { continuation.resume(returning: $0) } }
+    }
+    func save(_ cookie: HTTPCookie) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            setCookie(cookie) { continuation.resume() }
+        }
+    }
+}

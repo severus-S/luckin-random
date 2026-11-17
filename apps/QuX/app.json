@@ -2,8 +2,8 @@
   "name": "QuX",
   "bundleId": "com.sjx13.ios.qux",
   "displayName": "取X",
-  "version": "0.8.5",
-  "buildNumber": 12,
+  "version": "0.8.6",
+  "buildNumber": 13,
   "deploymentTarget": "27.0",
   "testPackage": true
 }
