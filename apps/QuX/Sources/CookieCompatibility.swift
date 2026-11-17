@@ -20,8 +20,4 @@ enum CookieCompatibility {
             (source?.host == "login.m.taobao.com" &&
              (url.host == "cainiao.com" || url.host?.hasSuffix(".cainiao.com") == true))
     }
-    static func inLoopWindow(passedAt: Date?, now: Date = Date()) -> Bool {
-        guard let passedAt else { return false }
-        return (0...5).contains(now.timeIntervalSince(passedAt))
-    }
 }

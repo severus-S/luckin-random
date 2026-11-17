@@ -27,11 +27,4 @@ final class CookieCompatibilityTests: XCTestCase {
         XCTAssertTrue(CookieCompatibility.isQuickEnterHandoff(URL(string: "https://page.cainiao.com/path")!, source: URL(string: "https://login.m.taobao.com/login.htm")!))
         XCTAssertFalse(CookieCompatibility.isQuickEnterHandoff(URL(string: "https://evil.test/vst")!, source: nil))
     }
-    func testLoopWindowExpires() {
-        let start = Date(timeIntervalSince1970: 100)
-        XCTAssertTrue(CookieCompatibility.inLoopWindow(passedAt: start, now: start.addingTimeInterval(4.9)))
-        XCTAssertFalse(CookieCompatibility.inLoopWindow(passedAt: start, now: start.addingTimeInterval(5.1)))
-        XCTAssertFalse(CookieCompatibility.inLoopWindow(passedAt: nil, now: start))
-        XCTAssertFalse(CookieCompatibility.inLoopWindow(passedAt: start, now: start.addingTimeInterval(-1)))
-    }
 }

@@ -49,8 +49,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     private var loginAttempt: CainiaoLogin?
     private var verificationTask: Task<Void, Never>?
     private var hasPassedQuickEnter = false
-    private var loopPreventCount = 0
-    private var quickEnterPassedAt: Date?
+    private var explicitLoginRequested = false
     private var latestMainURL: URL?
     private var warmupRequest: URLRequest?
     private var didWarmup = false
@@ -124,8 +123,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     func login() {
         hasPassedQuickEnter = false
-        quickEnterPassedAt = nil
-        loopPreventCount = 0
+        explicitLoginRequested = true
         verificationTask?.cancel()
         verificationTask = nil
         let attempt = CainiaoLogin()
@@ -238,7 +236,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         }
         if CookieCompatibility.isQuickEnterHandoff(url, source: action.sourceFrame.request.url ?? latestMainURL) {
             hasPassedQuickEnter = true
-            quickEnterPassedAt = Date()
+            explicitLoginRequested = false
         }
         if CainiaoLogin.isSSO(url), let attempt = loginAttempt, !attempt.ownsSSO(url) {
             loading = false
@@ -253,26 +251,16 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             verifySession(attempt: attempt)
             return
         }
-        if LoginNavigation.isLogin(url) {
-            // Business pages can require their own Taobao login. Keep the parent,
-            // target frame and return address even when no Cainiao attempt exists.
-            showingLogin = true
-        }
         let store = webView.configuration.websiteDataStore.httpCookieStore
         store.getAllCookies { [self] cookies in
-            if hasPassedQuickEnter, CookieCompatibility.inLoopWindow(passedAt: quickEnterPassedAt),
-               url.host == "login.m.taobao.com", CookieCompatibility.hasTaobaoSession(cookies) {
-                if action.targetFrame?.isMainFrame == false {
-                    print("[SSO-Debug] allowing iframe refresh \(url.absoluteString)")
-                } else if action.targetFrame?.isMainFrame == true && loopPreventCount < 1 {
-                    loopPreventCount += 1
-                    print("[SSO-Debug] cancelled first main-frame SSO loop \(url.absoluteString)")
-                    loading = false
-                    message = "已阻止一次登录回跳；请查看登录诊断，或手动重新登录。"
-                    decisionHandler(.cancel)
-                    return
-                }
+            if ParcelSyncPolicy.blocksLoginReturn(url, mainFrame: action.targetFrame?.isMainFrame == true,
+                passedQuickEnter: hasPassedQuickEnter, manualLogin: explicitLoginRequested, cookies: cookies) {
+                print("[SSO-Debug] blocked main-frame login return \(url.absoluteString)")
+                loading = false
+                decisionHandler(.cancel)
+                return
             }
+            if LoginNavigation.isLogin(url) { showingLogin = true }
             if action.targetFrame?.isMainFrame == true { latestMainURL = url }
             decisionHandler(.allow)
         }
@@ -317,7 +305,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         if let url = webView.url {
             if CookieCompatibility.isQuickEnterHandoff(url, source: latestMainURL) {
                 hasPassedQuickEnter = true
-                quickEnterPassedAt = Date()
+                explicitLoginRequested = false
             }
             latestMainURL = url
         }
@@ -434,23 +422,39 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     func readParcels() async throws -> [Parcel] {
+        guard isParcelPage else { throw CainiaoSyncError.unavailable }
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
+            store.getAllCookies { continuation.resume(returning: $0) }
+        }
+        let context = try await webView.callAsyncJavaScript(Self.pageContextScript, arguments: [:], in: nil, contentWorld: .page) as? [String: Any] ?? [:]
+        guard isParcelPage else { throw CainiaoSyncError.unavailable }
+        let ready = ParcelSyncPolicy.hasSyncCookie(cookies) && context["home"] as? Bool == true
+        print("[SSO-Debug] sync native; pageReady=\(ready); empty=\(context["empty"] as? Bool == true)")
+        if ready {
+            hasPassedQuickEnter = true
+            explicitLoginRequested = false
+            showingLogin = false
+            if context["empty"] as? Bool == true { return [] }
+        }
+        // This request never invokes lib.login or changes WebView location.
+        let host = context["gateway"] as? String ?? "acs.m.taobao.com"
+        guard ParcelSyncPolicy.gatewayHosts.contains(host),
+              let endpoint = URL(string: "https://\(host)/h5/mtop.cainiao.lpc.packageservice.querytaobaopackagelist/1.0/"),
+              ParcelSyncPolicy.allowedGateway(endpoint) else { throw CainiaoSyncError.unavailable }
         var parcels: [String: Parcel] = [:]
         for pageNumber in 1...200 {
             try Task.checkCancellation()
-            guard isParcelPage else { throw CainiaoSyncError.login }
-            let response = try await webView.callAsyncJavaScript(
-                Self.readPageScript, arguments: ["page": pageNumber], in: nil, contentWorld: .page
-            )
+            guard isParcelPage else { throw CainiaoSyncError.unavailable }
+            let payload = "{\"appName\":\"MYEXPRESS\",\"needTemporality\":\"false\",\"currentPage\":\"\(pageNumber)\",\"pageSize\":\"5\"}"
+            let response = try await CainiaoSession.request(endpoint: endpoint, payload: payload, store: store)
             try Task.checkCancellation()
-            guard isParcelPage else { throw CainiaoSyncError.login }
-            let page = try CainiaoParcelPage(response, expectedPage: pageNumber)
-            for parcel in page.parcels {
-                parcels[parcel.id] = parcel
-            }
-            if page.isLast {
+            guard isParcelPage else { throw CainiaoSyncError.unavailable }
+            let result = try ParcelSyncPolicy.page(response, expectedPage: pageNumber)
+            for parcel in result.parcels { parcels[parcel.id] = parcel }
+            if result.isLast {
                 return parcels.values.sorted {
-                    let left = $0.updatedAt ?? .distantPast
-                    let right = $1.updatedAt ?? .distantPast
+                    let left = $0.updatedAt ?? .distantPast, right = $1.updatedAt ?? .distantPast
                     return left == right ? $0.id < $1.id : left > right
                 }
             }
@@ -458,55 +462,15 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         throw CainiaoSyncError.pagination
     }
 
-    // Use the same read-only list operation and parameters as the loaded official page.
-    static let readPageScript = #"""
-    if (location.protocol !== "https:" || location.host !== "page.cainiao.com" ||
-        !/^\/guoguo\/app-myexpress-taobao\/?$/.test(location.pathname)) {
-        return { error: "login" };
-    }
-    const sdk = window.lib && window.lib.mtop;
-    if (!sdk || typeof sdk.request !== "function") return { error: "unavailable" };
-    let timer;
-    try {
-        sdk.config.prefix = "acs";
-        sdk.config.subDomain = "m";
-        const response = await Promise.race([
-            sdk.request({
-                api: "mtop.cainiao.lpc.packageservice.querytaobaopackagelist",
-                v: "1.0", dataType: "json", H5Request: true, AntiCreep: true,
-                LoginRequest: true, sessionOption: "AutoLoginAndManualLogin",
-                data: { appName: "MYEXPRESS", needTemporality: "false", currentPage: String(page), pageSize: "5" }
-            }),
-            new Promise((_, reject) => { timer = setTimeout(() => reject({}), 15000); })
-        ]);
-        const data = response && response.data;
-        if (!data || !Array.isArray(data.packages)) return { error: "schema" };
-        const text = v => typeof v === "string" ? v : Number.isSafeInteger(v) ? String(v) : "";
-        const fields = ["packageId", "mailNo", "partnerName", "cpCode", "partnerCode", "orderCode",
-            "logisticsStatus", "logisticsStatusDesc", "lastLogisticDetail",
-            "logisticsGmtModified", "signedDate", "consignDate"];
-        return {
-            current: text(data.currentPage), total: text(data.totalPage),
-            rows: data.packages.map(row => {
-                if (!row || typeof row !== "object") return null;
-                const item = (row.packageItem || [])[0] || {};
-                const station = row.packageStation || {};
-                const record = Object.fromEntries(fields.map(key => [key, text(row[key])]));
-                record.title = text(item.customeItemTitle || item.itemTitle || item.itemName || item.title);
-                record.station = text(station.stationName);
-                record.stationID = text(station.stationId);
-                record.pickupCode = record.logisticsStatus === "AGENT_SIGN" &&
-                    (station.showAuthCode === true || station.showAuthCode === "true") ? text(station.authCode) : "";
-                return record;
-            })
-        };
-    } catch (error) {
-        const status = Array.isArray(error && error.ret) ? error.ret.join(" ") : "";
-        return { error: /SESSION|NEED_LOGIN|LOGIN_REQUIRED|TOKEN_EXPIRED/i.test(status) ? "login" : "unavailable" };
-    } finally {
-        clearTimeout(timer);
-    }
+    static let pageContextScript = #"""
+    const text = document.body ? document.body.innerText : "";
+    const empty = text.includes("最近好像没有什么包裹");
+    const home = empty || text.includes("我的快递") || text.includes("查快递");
+    const config = window.lib && window.lib.mtop && window.lib.mtop.config || {};
+    const gateway = [config.prefix || "acs", config.subDomain || "m", config.mainDomain || "taobao.com"].join(".");
+    return {home, empty, gateway};
     """#
+
 }
 
 @MainActor

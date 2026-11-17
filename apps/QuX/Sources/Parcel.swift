@@ -120,7 +120,7 @@ enum CainiaoSyncError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .login: "请先在官方网页完成登录或验证，再同步。"
+        case .login: "同步接口未确认会话，已保留当前网页；可从菜单手动重新登录。"
         case .unavailable: "菜鸟暂时无法返回包裹，请检查网页提示后重试。"
         case .schema: "菜鸟返回的数据不完整，已保留本机包裹。"
         case .pagination: "包裹分页未完整返回，已保留本机包裹。"

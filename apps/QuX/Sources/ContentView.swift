@@ -400,7 +400,7 @@ private struct CainiaoSheet: View {
                         Text(browser.diagnostics.isEmpty ? "尚未捕获登录事件。请返回登录页操作后再查看。" : browser.diagnostics.joined(separator: "\n"))
                             .font(.caption.monospaced()).textSelection(.enabled)
                         Button("复制诊断") {
-                            UIPasteboard.general.string = "取X 0.8.10 (17)\n" + browser.diagnostics.joined(separator: "\n")
+                            UIPasteboard.general.string = "取X 0.8.11 (18)\n" + browser.diagnostics.joined(separator: "\n")
                         }.disabled(browser.diagnostics.isEmpty)
                     }.padding()
                 }
@@ -422,7 +422,11 @@ private struct CainiaoSheet: View {
             } catch is CancellationError {
                 return
             } catch {
-                status = (error as? CainiaoSyncError)?.errorDescription ?? CainiaoSyncError.unavailable.errorDescription
+                if let failure = error as? CainiaoSession.Failure {
+                    status = "同步接口未完成（\(failure.code)），已保留当前网页和本机包裹；可手动重新登录。"
+                } else {
+                    status = (error as? CainiaoSyncError)?.errorDescription ?? CainiaoSyncError.unavailable.errorDescription
+                }
                 return
             }
             do {

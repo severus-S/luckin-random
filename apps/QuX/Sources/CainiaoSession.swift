@@ -12,32 +12,37 @@ enum CainiaoSession {
     }
 
     static func verify(store: WKHTTPCookieStore) async throws {
+        let endpoint = URL(string: "https://cn-acs.m.cainiao.com/h5/mtop.cainiao.app.e2e.engine.page.fetch.cn/1.0/")!
+        let result = try await request(endpoint: endpoint, payload: "{\"pageId\":1800,\"h5Version\":\"2\"}", store: store)
+        guard CainiaoLogin.hasBusinessSession(result) else { throw Failure.rejected(CainiaoLogin.diagnosticCode(result)) }
+    }
+
+    static func request(endpoint: URL, payload: String, store: WKHTTPCookieStore) async throws -> [String: Any] {
+        guard ParcelSyncPolicy.allowedGateway(endpoint) else { throw Failure.rejected("INVALID_GATEWAY") }
+        let api = endpoint.path.components(separatedBy: "/").filter { !$0.isEmpty }[1]
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.timeoutIntervalForRequest = 15
         let session = URLSession(configuration: configuration, delegate: NoSessionRedirect(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
-        let endpoint = URL(string: "https://cn-acs.m.cainiao.com/h5/mtop.cainiao.app.e2e.engine.page.fetch.cn/1.0/")!
-        let payload = "{\"pageId\":1800,\"h5Version\":\"2\"}"
         for attempt in 0..<2 {
-            let cookies = await store.allCookies().filter { cookie in
-                let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
-                let host = endpoint.host!
-                let path = endpoint.path
-                let cookiePath = cookie.path
-                let matchesPath = path == cookiePath || (path.hasPrefix(cookiePath) && (cookiePath.hasSuffix("/") || path.dropFirst(cookiePath.count).hasPrefix("/")))
-                return (host == domain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + domain)))
-                    && matchesPath && (cookie.expiresDate == nil || cookie.expiresDate! > Date())
-            }.sorted { $0.path.count > $1.path.count }
+            try Task.checkCancellation()
+            let allCookies = await store.allCookies()
+            let cookies = ParcelSyncPolicy.cookies(allCookies, for: endpoint)
             let token = CainiaoLogin.signingToken(cookies.first { $0.name == "_m_h5_tk" }?.value)
             let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000))
             let signature = Insecure.MD5.hash(data: Data("\(token)&\(timestamp)&12574478&\(payload)".utf8))
                 .map { String(format: "%02x", $0) }.joined()
             var parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!
             parts.queryItems = ["jsv": "2.7.0", "appKey": "12574478", "t": timestamp, "sign": signature,
-                "api": "mtop.cainiao.app.e2e.engine.page.fetch.cn", "v": "1.0", "accountSite": "cainiao2c",
+                "api": api, "v": "1.0",
                 "type": "originaljson", "dataType": "json", "data": payload].map { URLQueryItem(name: $0.key, value: $0.value) }
+            if endpoint.host?.hasSuffix(".cainiao.com") == true {
+                parts.queryItems?.append(URLQueryItem(name: "accountSite", value: "cainiao2c"))
+            }
+            // URLComponents leaves '+' unescaped; form-style servers decode it as space.
+            parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
             var request = URLRequest(url: parts.url!)
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             request.setValue("https://page.cainiao.com", forHTTPHeaderField: "Origin")
@@ -45,7 +50,7 @@ enum CainiaoSession {
             request.setValue("cainiao_c_user", forHTTPHeaderField: "x-biz-type")
             request.setValue("env=cainiao_c_user", forHTTPHeaderField: "x-biz-info")
             request.setValue("zh_CN", forHTTPHeaderField: "cn_account_lang")
-            request.setValue("QuX/0.8.7 (iOS)", forHTTPHeaderField: "User-Agent")
+            request.setValue("QuX/0.8.11 (iOS)", forHTTPHeaderField: "User-Agent")
             for (key, value) in HTTPCookie.requestHeaderFields(with: cookies) { request.setValue(value, forHTTPHeaderField: key) }
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw Failure.rejected("INVALID_HTTP_RESPONSE") }
@@ -55,11 +60,11 @@ enum CainiaoSession {
             for (key, value) in http.allHeaderFields { headers[String(describing: key)] = String(describing: value) }
             for cookie in HTTPCookie.cookies(withResponseHeaderFields: headers, for: endpoint) {
                 let domain = cookie.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                guard domain == "cainiao.com" || domain.hasSuffix(".cainiao.com") else { continue }
+                guard endpoint.host == domain || endpoint.host?.hasSuffix("." + domain) == true else { continue }
                 await store.save(cookie)
             }
             guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Failure.rejected("INVALID_RESPONSE") }
-            if CainiaoLogin.hasBusinessSession(result) { return }
+            if (result["ret"] as? [String] ?? []).contains(where: { $0 == "SUCCESS" || $0.hasPrefix("SUCCESS::") }) { return result }
             let code = CainiaoLogin.diagnosticCode(result)
             if attempt == 0 && CainiaoLogin.shouldRetryToken(code) { continue }
             throw Failure.rejected(code)
