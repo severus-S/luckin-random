@@ -23,7 +23,7 @@
         INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
         MARKETING_VERSION = 0.8.8; CURRENT_PROJECT_VERSION = 15;
         ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-        INFOPLIST_KEY_NSCrossWebsiteTrackingUsageDescription = "可选择允许菜鸟、淘宝和天猫登录网页共享跨站 Cookie，以排查验证码后无法继续的问题。开启会降低取X内网页的跨站跟踪保护，可随时在系统设置关闭。";}; name = Release; };
+        INFOPLIST_FILE = "GeneratedInfo.plist";}; name = Release; };
 000000000000000000000064 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/App.swift"; sourceTree = "<group>"; };
 000000000000000000000065 = {isa = PBXBuildFile; fileRef = 000000000000000000000064; };
 000000000000000000000066 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/AuthDiagnostics.swift"; sourceTree = "<group>"; };

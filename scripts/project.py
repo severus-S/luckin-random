@@ -1,6 +1,7 @@
 """Standard-library-only native Xcode project generator; run after adding Swift files."""
 import argparse
 import json
+import plistlib
 import re
 from pathlib import Path
 
@@ -52,7 +53,10 @@ def generate(app):
         icon_settings = "ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;"
     privacy_settings = ""
     if c.get("crossWebsiteTrackingUsageDescription"):
-        privacy_settings = "INFOPLIST_KEY_NSCrossWebsiteTrackingUsageDescription = " + json.dumps(c["crossWebsiteTrackingUsageDescription"], ensure_ascii=False) + ";"
+        (folder / "GeneratedInfo.plist").write_bytes(plistlib.dumps({
+            "NSCrossWebsiteTrackingUsageDescription": c["crossWebsiteTrackingUsageDescription"]
+        }))
+        privacy_settings = 'INFOPLIST_FILE = "GeneratedInfo.plist";'
     settings = f'''CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = "";
         PRODUCT_BUNDLE_IDENTIFIER = "{c['bundleId']}"; PRODUCT_NAME = "{app}";
         SDKROOT = iphoneos; SUPPORTED_PLATFORMS = iphoneos; ARCHS = arm64;
