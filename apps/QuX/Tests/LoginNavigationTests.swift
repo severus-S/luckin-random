@@ -17,7 +17,7 @@ final class LoginNavigationTests: XCTestCase {
         let embedded = URL(string: "https://cnlogin.cainiao.com/login?redirectURL=old&returnUrl=other&redirectType=iframe&cnSite=CAINIAO2C")!
         let result = try XCTUnwrap(LoginNavigation.topLevelLogin(embedded, returningTo: destination))
         let query = URLComponents(url: result, resolvingAgainstBaseURL: false)!.queryItems!
-        XCTAssertEqual(query.count, 2)
+        XCTAssertEqual(query.count, 3)
         XCTAssertEqual(query.first { $0.name == "cnSite" }?.value, "CAINIAO2C")
         XCTAssertEqual(query.first { $0.name == "redirectURL" }?.value, destination.absoluteString)
     }
@@ -50,5 +50,42 @@ final class LoginNavigationTests: XCTestCase {
         let query = URLComponents(url: promoted, resolvingAgainstBaseURL: false)!.queryItems!
         XCTAssertEqual(query.first { $0.name == "redirectURL" }?.value, destination.absoluteString)
         XCTAssertEqual(query.first { $0.name == "bizName" }?.value, "taobao")
+    }
+
+    func testUpgradesLegacyOfficialReturnWithoutLosingParameters() throws {
+        let original = URL(string: "http://login.taobao.com:80/member/vst.htm?st=synthetic%2Bvalue&next=a%26b#done")!
+        let upgraded = try XCTUnwrap(LoginNavigation.webFallback(original))
+        XCTAssertEqual(upgraded.absoluteString, "https://login.taobao.com/member/vst.htm?st=synthetic%2Bvalue&next=a%26b#done")
+        XCTAssertNil(LoginNavigation.webFallback(URL(string: "http://login.taobao.com:8080/a")!))
+        XCTAssertNil(LoginNavigation.webFallback(URL(string: "http://login.taobao.com.evil.test/a")!))
+        XCTAssertNil(LoginNavigation.webFallback(URL(string: "http://user:secret@login.taobao.com/a")!))
+    }
+
+    func testTaobaoAppCarrierContinuesAtItsOfficialWebDestination() throws {
+        var carrier = URLComponents(string: "tbopen://m.taobao.com/tbopen/index.html")!
+        let destination = "https://page.cainiao.com/guoguo/app-myexpress-taobao/?x=a%26b#/"
+        carrier.queryItems = [URLQueryItem(name: "h5Url", value: destination)]
+        XCTAssertEqual(LoginNavigation.webFallback(carrier.url!)?.absoluteString, destination)
+        for target in ["https://evil.test/", "javascript:alert(1)", "tbopen://m.taobao.com/tbopen/index.html"] {
+            carrier.queryItems = [URLQueryItem(name: "h5Url", value: target)]
+            XCTAssertNil(LoginNavigation.webFallback(carrier.url!))
+        }
+        carrier.queryItems = [URLQueryItem(name: "h5Url", value: destination), URLQueryItem(name: "h5Url", value: destination)]
+        XCTAssertNil(LoginNavigation.webFallback(carrier.url!))
+    }
+
+    func testBlockedDiagnosticsNeverIncludeLoginParameters() {
+        let url = URL(string: "otherapp://user:secret@example.test/private?st=token#session")!
+        XCTAssertEqual(LoginNavigation.blockedMessage(url), "无法继续此跳转（otherapp · example.test）。请将此提示反馈。")
+    }
+
+    func testLoginDisablesAppLaunchAndRemovesHigherPriorityLegacyReturn() {
+        let destination = URL(string: "https://page.cainiao.com/guoguo/app-myexpress-taobao/")!
+        let source = URL(string: "https://login.m.taobao.com/login.htm?tpl_redirect_url=old&hideCallApp=false")!
+        let result = LoginNavigation.topLevelLogin(source, returningTo: destination)!
+        let items = URLComponents(url: result, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(items.first { $0.name == "hideCallApp" }?.value, "true")
+        XCTAssertFalse(items.contains { $0.name == "tpl_redirect_url" })
+        XCTAssertEqual(items.first { $0.name == "redirectURL" }?.value, destination.absoluteString)
     }
 }

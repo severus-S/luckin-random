@@ -93,9 +93,20 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = action.request.url, let fallback = LoginNavigation.webFallback(url),
+           action.targetFrame?.isMainFrame != false {
+            decisionHandler(.cancel)
+            var request = action.request
+            request.url = fallback
+            load(request)
+            return
+        }
         guard let url = action.request.url,
               CainiaoPage.allows(url) || (url.absoluteString == "about:blank" && action.targetFrame?.isMainFrame == false) else {
-            if action.targetFrame?.isMainFrame != false { message = "该网页要求打开外部应用或其他站点。" }
+            if action.targetFrame?.isMainFrame != false {
+                loading = false
+                message = LoginNavigation.blockedMessage(action.request.url)
+            }
             decisionHandler(.cancel)
             return
         }
@@ -142,12 +153,20 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        guard let url = navigationAction.request.url, CainiaoPage.allows(url) else { return nil }
+        guard let original = navigationAction.request.url else { return nil }
+        let url = LoginNavigation.webFallback(original) ?? original
+        guard CainiaoPage.allows(url) else {
+            loading = false
+            message = LoginNavigation.blockedMessage(original)
+            return nil
+        }
         if let login = LoginNavigation.topLevelLogin(url, returningTo: page.url) {
             showingLogin = true
             load(URLRequest(url: login))
         } else {
-            load(navigationAction.request)
+            var request = navigationAction.request
+            request.url = url
+            load(request)
         }
         return nil
     }
