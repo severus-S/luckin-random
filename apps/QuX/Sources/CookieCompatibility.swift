@@ -1,24 +1,27 @@
 import Foundation
 
 enum CookieCompatibility {
-    static func cainiaoClone(_ cookie: HTTPCookie) -> HTTPCookie? {
+    static func shouldRemoveLegacyCopy(_ cookie: HTTPCookie) -> Bool {
         let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        guard domain == "taobao.com" || domain.hasSuffix(".taobao.com"),
-              var properties = cookie.properties else { return nil }
-        properties[.domain] = ".cainiao.com"
-        return HTTPCookie(properties: properties)
+        return domain == "cainiao.com" &&
+            ["cookie2", "unb", "_tb_token_", "sgcookie", "t", "_m_h5_tk", "_m_h5_tk_enc"].contains(cookie.name)
     }
-
-    // Response cookies win over an older store snapshot with the same identity.
-    static func writes(_ cookies: [HTTPCookie]) -> [HTTPCookie] {
-        var originals: [String: HTTPCookie] = [:]
-        var clones: [String: HTTPCookie] = [:]
-        func key(_ cookie: HTTPCookie) -> String { "\(cookie.domain)|\(cookie.path)|\(cookie.name)" }
-        for cookie in cookies {
-            originals[key(cookie)] = cookie
-            if let clone = cainiaoClone(cookie) { clones[key(clone)] = clone }
+    static func hasTaobaoSession(_ cookies: [HTTPCookie], now: Date = Date()) -> Bool {
+        let valid = cookies.filter {
+            let domain = $0.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            return domain == "taobao.com" && !$0.value.isEmpty && ($0.expiresDate == nil || $0.expiresDate! > now)
         }
-        for (key, clone) in clones { originals[key] = clone }
-        return Array(originals.values)
+        return ["cookie2", "unb"].allSatisfy { name in valid.contains { $0.name == name } }
+    }
+    static func isQuickEnterHandoff(_ url: URL, source: URL?) -> Bool {
+        guard LoginNavigation.allows(url) else { return false }
+        let raw = url.absoluteString.lowercased()
+        return ["mini_apply_st", "vst", "havana_iv_token"].contains(where: raw.contains) ||
+            (source?.host == "login.m.taobao.com" &&
+             (url.host == "cainiao.com" || url.host?.hasSuffix(".cainiao.com") == true))
+    }
+    static func inLoopWindow(passedAt: Date?, now: Date = Date()) -> Bool {
+        guard let passedAt else { return false }
+        return (0...5).contains(now.timeIntervalSince(passedAt))
     }
 }

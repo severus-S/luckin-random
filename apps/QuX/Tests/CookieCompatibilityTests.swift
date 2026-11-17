@@ -6,29 +6,32 @@ final class CookieCompatibilityTests: XCTestCase {
         HTTPCookie(properties: [.name: name, .value: value, .domain: domain, .path: "/", .secure: "TRUE",
                                 .expires: Date(timeIntervalSince1970: 4_000_000_000)])!
     }
-    func testCoreCookiesCloneWithValueAndAttributes() throws {
+    func testCleanupRemovesOnlyLegacyCainiaoCopies() throws {
         for name in ["cookie2", "unb", "_tb_token_", "sgcookie", "t", "_m_h5_tk", "_m_h5_tk_enc"] {
-            let source = cookie(name)
-            let clone = try XCTUnwrap(CookieCompatibility.cainiaoClone(source))
-            XCTAssertEqual(clone.domain, ".cainiao.com")
-            XCTAssertEqual(clone.name, source.name)
-            XCTAssertEqual(clone.value, source.value)
-            XCTAssertEqual(clone.path, source.path)
-            XCTAssertEqual(clone.isSecure, source.isSecure)
-            XCTAssertEqual(clone.expiresDate, source.expiresDate)
+            XCTAssertTrue(CookieCompatibility.shouldRemoveLegacyCopy(cookie(name, domain: ".cainiao.com")))
+            XCTAssertFalse(CookieCompatibility.shouldRemoveLegacyCopy(cookie(name)))
+            XCTAssertFalse(CookieCompatibility.shouldRemoveLegacyCopy(cookie(name, domain: "cnlogin.cainiao.com")))
         }
+        XCTAssertFalse(CookieCompatibility.shouldRemoveLegacyCopy(cookie("cncc", domain: ".cainiao.com")))
     }
-    func testRejectsUnrelatedAndLookalikeDomains() {
-        for domain in ["eviltaobao.com", "taobao.com.evil.test", ".cainiao.com", ".tmall.com"] {
-            XCTAssertNil(CookieCompatibility.cainiaoClone(cookie("cookie2", domain: domain)))
-        }
-        XCTAssertNotNil(CookieCompatibility.cainiaoClone(cookie("cookie2", domain: "login.m.taobao.com")))
+    func testSessionRequiresBothValidTaobaoCookies() {
+        XCTAssertTrue(CookieCompatibility.hasTaobaoSession([cookie("cookie2"), cookie("unb")]))
+        XCTAssertFalse(CookieCompatibility.hasTaobaoSession([cookie("cookie2")]))
+        XCTAssertFalse(CookieCompatibility.hasTaobaoSession([cookie("cookie2"), cookie("unb", value: "")]))
+        XCTAssertFalse(CookieCompatibility.hasTaobaoSession([cookie("cookie2", domain: "taobao.com.evil.test"), cookie("unb")]))
+        XCTAssertFalse(CookieCompatibility.hasTaobaoSession([cookie("cookie2"), cookie("unb")], now: Date(timeIntervalSince1970: 5_000_000_000)))
     }
-    func testFreshResponseWinsOverSnapshotAndWritesAreUnique() {
-        let old = cookie("cookie2", value: "old")
-        let fresh = cookie("cookie2", value: "fresh")
-        let writes = CookieCompatibility.writes([old, cookie("cookie2", domain: ".cainiao.com", value: "old-cn"), fresh])
-        XCTAssertEqual(writes.count, 2)
-        XCTAssertTrue(writes.allSatisfy { $0.value == "fresh" })
+    func testHandoffMarkersAndCrossSiteTransition() {
+        XCTAssertTrue(CookieCompatibility.isQuickEnterHandoff(URL(string: "https://login.m.taobao.com/mini_apply_st.htm")!, source: nil))
+        XCTAssertTrue(CookieCompatibility.isQuickEnterHandoff(URL(string: "https://pass.tmall.hk/vst.htm")!, source: nil))
+        XCTAssertTrue(CookieCompatibility.isQuickEnterHandoff(URL(string: "https://page.cainiao.com/path")!, source: URL(string: "https://login.m.taobao.com/login.htm")!))
+        XCTAssertFalse(CookieCompatibility.isQuickEnterHandoff(URL(string: "https://evil.test/vst")!, source: nil))
+    }
+    func testLoopWindowExpires() {
+        let start = Date(timeIntervalSince1970: 100)
+        XCTAssertTrue(CookieCompatibility.inLoopWindow(passedAt: start, now: start.addingTimeInterval(4.9)))
+        XCTAssertFalse(CookieCompatibility.inLoopWindow(passedAt: start, now: start.addingTimeInterval(5.1)))
+        XCTAssertFalse(CookieCompatibility.inLoopWindow(passedAt: nil, now: start))
+        XCTAssertFalse(CookieCompatibility.inLoopWindow(passedAt: start, now: start.addingTimeInterval(-1)))
     }
 }

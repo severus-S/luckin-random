@@ -48,6 +48,14 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     private var activeNavigation: WKNavigation?
     private var loginAttempt: CainiaoLogin?
     private var verificationTask: Task<Void, Never>?
+    private var hasPassedQuickEnter = false
+    private var loopPreventCount = 0
+    private var quickEnterPassedAt: Date?
+    private var latestMainURL: URL?
+    private var warmupRequest: URLRequest?
+    private var didWarmup = false
+    private var requestSequence = 0
+    private static var cleanupTask: Task<Void, Never>?
     private var cookieJobs: [() -> Void] = []
     private var cookieJobRunning = false
 
@@ -64,9 +72,12 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             injectionTime: .atDocumentEnd, forMainFrameOnly: false))
         configuration.userContentController.addUserScript(WKUserScript(source: AuthDiagnostics.script,
             injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        configuration.userContentController.addUserScript(WKUserScript(source: SSODebug.script,
+            injectionTime: .atDocumentStart, forMainFrameOnly: false))
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         configuration.userContentController.add(AuthDiagnosticsHandler(owner: self), name: "quxDiagnostics")
+        configuration.userContentController.add(SSODebugHandler(owner: self), name: "ssoDebug")
         webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -112,6 +123,9 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     func login() {
+        hasPassedQuickEnter = false
+        quickEnterPassedAt = nil
+        loopPreventCount = 0
         verificationTask?.cancel()
         verificationTask = nil
         let attempt = CainiaoLogin()
@@ -120,15 +134,86 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         load(URLRequest(url: attempt.loginURL, timeoutInterval: 30))
     }
 
+    // One-time upgrade migration: the previous version overwrote same-name
+    // Cainiao tokens, so provenance cannot be recovered. Reset only that set.
+    private func prepareCookies() async {
+        if Self.cleanupTask == nil {
+            let store = webView.configuration.websiteDataStore.httpCookieStore
+            Self.cleanupTask = Task { @MainActor in
+                let key = "qux.cookie-domain-cleanup.v1"
+                guard !UserDefaults.standard.bool(forKey: key) else { return }
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    store.getAllCookies { cookies in
+                        let group = DispatchGroup()
+                        let legacy = cookies.filter(CookieCompatibility.shouldRemoveLegacyCopy)
+                        print("[SSO-Debug] cleanup legacy Cainiao cookies count=\(legacy.count)")
+                        for cookie in legacy {
+                            group.enter()
+                            store.delete(cookie) { group.leave() }
+                        }
+                        group.notify(queue: .main) {
+                            UserDefaults.standard.set(true, forKey: key)
+                            continuation.resume()
+                        }
+                    }
+                }
+            }
+        }
+        await Self.cleanupTask?.value
+    }
+
     private func load(_ request: URLRequest) {
         message = nil
         loading = true
         canSync = false
+        requestSequence += 1
+        let sequence = requestSequence
+        Task { @MainActor in
+            await prepareCookies()
+            guard sequence == requestSequence else { return }
+            if !didWarmup {
+                didWarmup = true
+                warmupRequest = request
+                print("[SSO-Debug] first-party warmup https://h5api.m.taobao.com/")
+                activeNavigation = webView.load(URLRequest(url: URL(string: "https://h5api.m.taobao.com/")!, timeoutInterval: 5))
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    if sequence == requestSequence { finishWarmup() }
+                }
+            } else {
+                warmupRequest = nil
+                activeNavigation = webView.load(request)
+            }
+        }
+    }
+
+    private func finishWarmup() {
+        guard let request = warmupRequest else { return }
+        warmupRequest = nil
+        webView.stopLoading()
+        print("[SSO-Debug] warmup finished; loading original request")
         activeNavigation = webView.load(request)
+    }
+
+    fileprivate func recordSSODebug(_ message: WKScriptMessage) {
+        guard let url = message.frameInfo.request.url, LoginNavigation.allows(url),
+              let data = message.body as? [String: Any], let type = data["type"] as? String,
+              ["ready", "hook", "replace", "assign", "mtop-error"].contains(type) else { return }
+        // Full URL/stack logging is explicitly requested for local Xcode debugging.
+        print("[SSO-Debug] [MainFrame: \(message.frameInfo.isMainFrame)] \(data)")
+        // The copyable in-app report keeps query values and call stacks out.
+        var line = "SSO · \(url.host ?? "") · \(type)"
+        if let code = data["code"] as? String,
+           code.range(of: "^FAIL_[A-Z0-9_]{1,100}$", options: .regularExpression) != nil { line += " · " + code }
+        if let installed = data["installed"] as? Bool { line += " · installed=\(installed)" }
+        diagnostics.append(line)
+        if diagnostics.count > 80 { diagnostics.removeFirst(diagnostics.count - 80) }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        let frame = action.targetFrame?.isMainFrame
+        print("[SSO-Debug] navigationAction [MainFrame: \(frame.map(String.init) ?? "new-window")] \(action.request.url?.absoluteString ?? "nil")")
         guard let scheme = action.request.url?.scheme?.lowercased(),
               ["http", "https", "about"].contains(scheme) else {
             decisionHandler(.cancel)
@@ -151,6 +236,10 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             decisionHandler(.cancel)
             return
         }
+        if CookieCompatibility.isQuickEnterHandoff(url, source: action.sourceFrame.request.url ?? latestMainURL) {
+            hasPassedQuickEnter = true
+            quickEnterPassedAt = Date()
+        }
         if CainiaoLogin.isSSO(url), let attempt = loginAttempt, !attempt.ownsSSO(url) {
             loading = false
             message = "登录交接与本次请求不匹配，请从菜单重新登录。"
@@ -169,7 +258,22 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             // target frame and return address even when no Cainiao attempt exists.
             showingLogin = true
         }
-        synchronizeCookies(in: webView.configuration.websiteDataStore.httpCookieStore) {
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        store.getAllCookies { [self] cookies in
+            if hasPassedQuickEnter, CookieCompatibility.inLoopWindow(passedAt: quickEnterPassedAt),
+               url.host == "login.m.taobao.com", CookieCompatibility.hasTaobaoSession(cookies) {
+                if action.targetFrame?.isMainFrame == false {
+                    print("[SSO-Debug] allowing iframe refresh \(url.absoluteString)")
+                } else if action.targetFrame?.isMainFrame == true && loopPreventCount < 1 {
+                    loopPreventCount += 1
+                    print("[SSO-Debug] cancelled first main-frame SSO loop \(url.absoluteString)")
+                    loading = false
+                    message = "已阻止一次登录回跳；请查看登录诊断，或手动重新登录。"
+                    decisionHandler(.cancel)
+                    return
+                }
+            }
+            if action.targetFrame?.isMainFrame == true { latestMainURL = url }
             decisionHandler(.allow)
         }
     }
@@ -190,30 +294,33 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         }
     }
 
-    func syncAndCloneCookies(from cookies: [HTTPCookie], to cookieStore: WKHTTPCookieStore,
-                             completion: @escaping () -> Void) {
-        let group = DispatchGroup()
-        for cookie in CookieCompatibility.writes(cookies) {
-            group.enter()
-            cookieStore.setCookie(cookie) { group.leave() }
-        }
-        group.notify(queue: .main, execute: completion)
-    }
-
-    // Serialize snapshots and writes so simultaneous iframe/main-frame policies
-    // cannot restore stale cookies over a newer response.
     private func synchronizeCookies(in store: WKHTTPCookieStore, responseCookies: [HTTPCookie] = [],
                                     completion: @escaping () -> Void) {
         cookieJobs.append { [self] in
-            store.getAllCookies { [self] existing in
-                syncAndCloneCookies(from: existing + responseCookies, to: store) { [self] in
-                    completion()
-                    cookieJobRunning = false
-                    runNextCookieJob()
-                }
+            let group = DispatchGroup()
+            // Only response-owned cookies, with original domain/path/properties.
+            for cookie in responseCookies {
+                group.enter()
+                store.setCookie(cookie) { group.leave() }
+            }
+            group.notify(queue: .main) { [self] in
+                completion()
+                cookieJobRunning = false
+                runNextCookieJob()
             }
         }
         runNextCookieJob()
+    }
+
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        print("[SSO-Debug] serverRedirect [MainFrame: true] \(webView.url?.absoluteString ?? "nil")")
+        if let url = webView.url {
+            if CookieCompatibility.isQuickEnterHandoff(url, source: latestMainURL) {
+                hasPassedQuickEnter = true
+                quickEnterPassedAt = Date()
+            }
+            latestMainURL = url
+        }
     }
 
     private func runNextCookieJob() {
@@ -238,6 +345,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard navigation === activeNavigation else { return }
+        if warmupRequest != nil { finishWarmup(); return }
         loading = false
         message = nil
         canGoBack = webView.canGoBack
@@ -274,10 +382,12 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) {
+        if warmupRequest != nil { finishWarmup(); return }
         showNavigationError(error, navigation: navigation)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if warmupRequest != nil { finishWarmup(); return }
         showNavigationError(error, navigation: navigation)
     }
 
@@ -405,5 +515,14 @@ private final class AuthDiagnosticsHandler: NSObject, WKScriptMessageHandler {
     init(owner: CainiaoBrowser) { self.owner = owner }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         owner?.recordDiagnostic(message)
+    }
+}
+
+@MainActor
+private final class SSODebugHandler: NSObject, WKScriptMessageHandler {
+    weak var owner: CainiaoBrowser?
+    init(owner: CainiaoBrowser) { self.owner = owner }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        owner?.recordSSODebug(message)
     }
 }

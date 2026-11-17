@@ -395,12 +395,12 @@ private struct CainiaoSheet: View {
                         }.buttonStyle(.glass)
                         Divider()
                         Text("本次登录诊断").font(.headline)
-                        Text("仅记录页面域名、请求类别、HTTP状态和事件。storage-no表示存储访问检查为否，不能单独证明故障原因。无手机号、验证码、请求正文、Cookie或票据。")
+                        Text("可复制报告仅记录域名、请求类别、状态和错误码。按调试要求，Xcode控制台另含完整导航URL与调用栈，可能包含登录票据，请勿公开分享。storage-no表示存储访问检查为否，不能单独证明故障原因。无手机号、验证码、请求正文、Cookie或票据。")
                             .font(.footnote).foregroundStyle(.secondary)
                         Text(browser.diagnostics.isEmpty ? "尚未捕获登录事件。请返回登录页操作后再查看。" : browser.diagnostics.joined(separator: "\n"))
                             .font(.caption.monospaced()).textSelection(.enabled)
                         Button("复制诊断") {
-                            UIPasteboard.general.string = "取X 0.8.9 (16)\n" + browser.diagnostics.joined(separator: "\n")
+                            UIPasteboard.general.string = "取X 0.8.10 (17)\n" + browser.diagnostics.joined(separator: "\n")
                         }.disabled(browser.diagnostics.isEmpty)
                     }.padding()
                 }
