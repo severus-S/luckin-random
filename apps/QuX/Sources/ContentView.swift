@@ -400,7 +400,7 @@ private struct CainiaoSheet: View {
                         Text(browser.diagnostics.isEmpty ? "尚未捕获登录事件。请返回登录页操作后再查看。" : browser.diagnostics.joined(separator: "\n"))
                             .font(.caption.monospaced()).textSelection(.enabled)
                         Button("复制诊断") {
-                            UIPasteboard.general.string = "取X 0.8.8 (15)\n" + browser.diagnostics.joined(separator: "\n")
+                            UIPasteboard.general.string = "取X 0.8.9 (16)\n" + browser.diagnostics.joined(separator: "\n")
                         }.disabled(browser.diagnostics.isEmpty)
                     }.padding()
                 }

@@ -48,6 +48,8 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     private var activeNavigation: WKNavigation?
     private var loginAttempt: CainiaoLogin?
     private var verificationTask: Task<Void, Never>?
+    private var cookieJobs: [() -> Void] = []
+    private var cookieJobRunning = false
 
     init(page: CainiaoPage) {
         self.page = page
@@ -76,9 +78,16 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     static let inputCompatibilityScript = #"""
     (function() {
+        if (window.location.host.indexOf('login') === -1) return;
         document.addEventListener('input', function(e) {
             var target = e.target;
-            if (target && target.tagName === 'INPUT') {
+            if (!target || target.tagName !== 'INPUT') return;
+            var identity = (target.id || '') + ' ' + (target.name || '');
+            var isCode = target.autocomplete === 'one-time-code' ||
+                /sms.?code|check.?code|verify.?code|verification.?code|otp/i.test(identity) ||
+                (target.maxLength === 4 && /^(tel|number|text)$/.test(target.type) &&
+                 !/phone|mobile|password|account/i.test(identity));
+            if (isCode) {
                 target.dispatchEvent(new Event('change', { bubbles: true }));
                 target.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: target.value }));
             }
@@ -160,30 +169,58 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             // target frame and return address even when no Cainiao attempt exists.
             showingLogin = true
         }
-        decisionHandler(.allow)
+        synchronizeCookies(in: webView.configuration.websiteDataStore.httpCookieStore) {
+            decisionHandler(.allow)
+        }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        guard let response = navigationResponse.response as? HTTPURLResponse,
-              let url = response.url else {
+        var responseCookies: [HTTPCookie] = []
+        if let response = navigationResponse.response as? HTTPURLResponse, let url = response.url {
+            var headers: [String: String] = [:]
+            for (key, value) in response.allHeaderFields {
+                headers[String(describing: key)] = String(describing: value)
+            }
+            responseCookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
+        }
+        synchronizeCookies(in: webView.configuration.websiteDataStore.httpCookieStore,
+                           responseCookies: responseCookies) {
             decisionHandler(.allow)
-            return
         }
-        var headers: [String: String] = [:]
-        for (key, value) in response.allHeaderFields {
-            headers[String(describing: key)] = String(describing: value)
+    }
+
+    func syncAndCloneCookies(from cookies: [HTTPCookie], to cookieStore: WKHTTPCookieStore,
+                             completion: @escaping () -> Void) {
+        let group = DispatchGroup()
+        for cookie in CookieCompatibility.writes(cookies) {
+            group.enter()
+            cookieStore.setCookie(cookie) { group.leave() }
         }
-        let cookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
-        let writes = DispatchGroup()
-        for cookie in cookies {
-            writes.enter()
-            webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie) {
-                writes.leave()
+        group.notify(queue: .main, execute: completion)
+    }
+
+    // Serialize snapshots and writes so simultaneous iframe/main-frame policies
+    // cannot restore stale cookies over a newer response.
+    private func synchronizeCookies(in store: WKHTTPCookieStore, responseCookies: [HTTPCookie] = [],
+                                    completion: @escaping () -> Void) {
+        cookieJobs.append { [self] in
+            store.getAllCookies { [self] existing in
+                syncAndCloneCookies(from: existing + responseCookies, to: store) { [self] in
+                    completion()
+                    cookieJobRunning = false
+                    runNextCookieJob()
+                }
             }
         }
-        // Complete once, after every asynchronous Cookie write has finished.
-        writes.notify(queue: .main) { decisionHandler(.allow) }
+        runNextCookieJob()
+    }
+
+    private func runNextCookieJob() {
+        guard !cookieJobRunning, !cookieJobs.isEmpty else { return }
+        cookieJobRunning = true
+        let job = cookieJobs.removeFirst()
+        job()
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
