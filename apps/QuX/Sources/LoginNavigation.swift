@@ -4,6 +4,8 @@ enum LoginNavigation {
     static func allows(_ url: URL) -> Bool {
         guard url.scheme == "https", url.user == nil, url.password == nil,
               url.port == nil || url.port == 443, let host = url.host?.lowercased() else { return false }
+        // Cross-site session handoff observed on the device during quick login.
+        if host == "pass.tmall.hk" { return true }
         return ["cainiao.com", "taobao.com", "tmall.com", "alipay.com", "alibaba.com"].contains {
             host == $0 || host.hasSuffix("." + $0)
         }

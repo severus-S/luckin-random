@@ -88,4 +88,26 @@ final class LoginNavigationTests: XCTestCase {
         XCTAssertFalse(items.contains { $0.name == "tpl_redirect_url" })
         XCTAssertEqual(items.first { $0.name == "redirectURL" }?.value, destination.absoluteString)
     }
+
+    func testTmallInternationalSessionHandoffIsAllowedWithoutRewriting() {
+        let handoff = URL(string: "https://pass.tmall.hk/add?synthetic=value%2B1&redirectURL=https%3A%2F%2Fpage.cainiao.com%2F")!
+        XCTAssertTrue(LoginNavigation.allows(handoff))
+        XCTAssertNil(LoginNavigation.webFallback(handoff))
+        XCTAssertFalse(LoginNavigation.isLogin(handoff))
+        XCTAssertNil(LoginNavigation.topLevelLogin(handoff, returningTo: cainiaoTestDestination))
+        XCTAssertTrue(LoginNavigation.allows(URL(string: "https://PASS.TMALL.HK:443/add")!))
+    }
+
+    private var cainiaoTestDestination: URL { URL(string: "https://page.cainiao.com/guoguo/app-myexpress-taobao/")! }
+
+    func testTmallHandoffRejectsLookalikesCredentialsAndUnexpectedPorts() {
+        for raw in ["https://pass.tmall.hk.evil.test/add", "https://evilpass.tmall.hk/add",
+                    "https://child.pass.tmall.hk/add", "https://unrelated.tmall.hk/add",
+                    "http://pass.tmall.hk/add", "https://user:secret@pass.tmall.hk/add",
+                    "https://pass.tmall.hk:8443/add"] {
+            XCTAssertFalse(LoginNavigation.allows(URL(string: raw)!), raw)
+        }
+        XCTAssertEqual(LoginNavigation.webFallback(URL(string: "http://pass.tmall.hk/add?synthetic=a%26b")!)?.absoluteString,
+                       "https://pass.tmall.hk/add?synthetic=a%26b")
+    }
 }
