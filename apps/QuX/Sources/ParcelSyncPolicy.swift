@@ -4,7 +4,7 @@ enum ParcelSyncPolicy {
     static let gatewayHosts = ["acs.m.taobao.com", "h5api.m.taobao.com", "acs.m.cainiao.com", "cn-acs.m.cainiao.com"]
     static func allowedGateway(_ url: URL) -> Bool {
         url.scheme == "https" && url.user == nil && url.password == nil && (url.port == nil || url.port == 443) &&
-        gatewayHosts.contains(url.host ?? "") && url.path.range(of: "^/h5/[a-z0-9.]+/1\\.0/$", options: .regularExpression) != nil
+        gatewayHosts.contains(url.host ?? "") && url.path.range(of: "^/h5/[a-z0-9.]+/1\\.0/?$", options: .regularExpression) != nil
     }
     static func hasSyncCookie(_ cookies: [HTTPCookie], now: Date = Date()) -> Bool {
         cookies.contains {
