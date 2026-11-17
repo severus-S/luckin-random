@@ -206,9 +206,19 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let frame = action.targetFrame?.isMainFrame
         print("[SSO-Debug] navigationAction [MainFrame: \(frame.map(String.init) ?? "new-window")] \(action.request.url?.absoluteString ?? "nil")")
-        guard let scheme = action.request.url?.scheme?.lowercased(),
-              ["http", "https", "about"].contains(scheme) else {
+        guard let url = action.request.url else { decisionHandler(.cancel); return }
+        if !NetworkAccessPolicy.isWebKitURL(url) {
             decisionHandler(.cancel)
+            // WKWebView cannot load native-app schemes itself. Cancel only its
+            // unsupported navigation, then hand the exact URL to the OS.
+            UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+                print("[SSO-Debug] external scheme=\(url.scheme ?? "") opened=\(opened)")
+                if !opened {
+                    Task { @MainActor [weak self] in
+                        self?.message = "系统未找到可处理 \(url.scheme ?? "此") 链接的应用，网页可继续使用。"
+                    }
+                }
+            }
             return
         }
         // HTTP/HTTPS login and SSO transitions are owned by the website.

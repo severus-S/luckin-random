@@ -20,6 +20,8 @@ def config(app):
     if "buildNumber" in data:
         assert type(data["buildNumber"]) is int and 0 < data["buildNumber"] < 1_000_000_000, "Invalid build number"
     assert isinstance(data.get('displayName', app), str) and re.fullmatch(r'[\w \u4e00-\u9fff.-]{1,50}', data.get('displayName', app)), 'Invalid display name'
+    if "allowArbitraryNetworkLoads" in data:
+        assert type(data["allowArbitraryNetworkLoads"]) is bool, "Invalid network loads flag"
     purpose = data.get("crossWebsiteTrackingUsageDescription")
     if purpose is not None:
         assert isinstance(purpose, str) and 1 <= len(purpose) <= 300 and not any(ch in purpose for ch in "\r\n\x00"), "Invalid tracking purpose"
@@ -52,10 +54,13 @@ def generate(app):
     if any((path / "AppIcon.appiconset/Contents.json").is_file() for path in catalogs):
         icon_settings = "ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;"
     privacy_settings = ""
+    generated_info = {}
     if c.get("crossWebsiteTrackingUsageDescription"):
-        (folder / "GeneratedInfo.plist").write_bytes(plistlib.dumps({
-            "NSCrossWebsiteTrackingUsageDescription": c["crossWebsiteTrackingUsageDescription"]
-        }))
+        generated_info["NSCrossWebsiteTrackingUsageDescription"] = c["crossWebsiteTrackingUsageDescription"]
+    if c.get("allowArbitraryNetworkLoads"):
+        generated_info["NSAppTransportSecurity"] = {"NSAllowsArbitraryLoads": True}
+    if generated_info:
+        (folder / "GeneratedInfo.plist").write_bytes(plistlib.dumps(generated_info))
         privacy_settings = 'INFOPLIST_FILE = "GeneratedInfo.plist";'
     settings = f'''CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = "";
         PRODUCT_BUNDLE_IDENTIFIER = "{c['bundleId']}"; PRODUCT_NAME = "{app}";

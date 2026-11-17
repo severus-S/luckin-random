@@ -24,7 +24,7 @@ enum CainiaoSession {
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.timeoutIntervalForRequest = 15
-        let session = URLSession(configuration: configuration, delegate: NoSessionRedirect(), delegateQueue: nil)
+        let session = URLSession(configuration: configuration, delegate: FollowSessionRedirect(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         for attempt in 0..<2 {
             try Task.checkCancellation()
@@ -51,7 +51,7 @@ enum CainiaoSession {
             request.setValue("cainiao_c_user", forHTTPHeaderField: "x-biz-type")
             request.setValue("env=cainiao_c_user", forHTTPHeaderField: "x-biz-info")
             request.setValue("zh_CN", forHTTPHeaderField: "cn_account_lang")
-            request.setValue("QuX/0.8.12 (iOS)", forHTTPHeaderField: "User-Agent")
+            request.setValue("QuX/0.8.13 (iOS)", forHTTPHeaderField: "User-Agent")
             request.setValue(ParcelSyncPolicy.cookieHeader(cookies), forHTTPHeaderField: "Cookie")
             let source = tokenCookie.map { "domain=\($0.domain),path=\($0.path)" } ?? "undefined (no matching _m_h5_tk)"
             print("[MTOP-Debug] endpoint=\(endpoint.absoluteString) api=\(api) attempt=\(attempt + 1)")
@@ -78,10 +78,13 @@ enum CainiaoSession {
     }
 }
 
-private final class NoSessionRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+private final class FollowSessionRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
-                    completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        print("[MTOP-Debug] following HTTP redirect status=\(response.statusCode) host=\(request.url?.host ?? "")")
+        completionHandler(NetworkAccessPolicy.redirectedRequest(request, from: response.url))
+    }
 }
 
 private extension WKHTTPCookieStore {
