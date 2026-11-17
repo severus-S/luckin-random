@@ -41,6 +41,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     @Published var canGoBack = false
     @Published var canSync = false
     @Published var message: String?
+    @Published var parcelServiceMessage: String?
     @Published var showingLogin = false
     @Published var diagnostics: [String] = []
 
@@ -134,7 +135,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
                 _ = try ParcelSyncPolicy.page(response, expectedPage: pageNumber)
                 if isParcelPage {
                     showingLogin = false
-                    message = nil
+                    parcelServiceMessage = nil
                     canSync = true
                 }
                 reply(response, nil)
@@ -142,7 +143,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
                 let code = (error as? CainiaoSession.Failure)?.code ?? "FAIL_NATIVE_PARCEL_REQUEST"
                 appendNativeTrace("Native parcels · " + code)
                 if isParcelPage {
-                    message = "包裹接口未成功（\(code)），网页空白不代表无包裹；本机数据已保留。可手动重新登录。"
+                    parcelServiceMessage = "包裹接口未成功（\(code)），网页空白不代表无包裹；本机数据已保留。可手动重新登录。"
                     canSync = true
                 }
                 reply(["ret": [code], "data": [:]], nil)
@@ -162,6 +163,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     func reload() {
+        parcelServiceMessage = nil
         verificationTask?.cancel()
         verificationTask = nil
         loginAttempt = nil
@@ -170,6 +172,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     func login() {
+        parcelServiceMessage = nil
         verificationTask?.cancel()
         verificationTask = nil
         let attempt = CainiaoLogin()

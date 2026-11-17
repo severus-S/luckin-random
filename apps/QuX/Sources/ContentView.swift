@@ -317,7 +317,7 @@ private struct CainiaoSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if let message = status ?? browser.message {
+                if let message = status ?? browser.parcelServiceMessage ?? browser.message {
                     Text(message).font(.footnote).frame(maxWidth: .infinity).padding(10)
                         .glassEffect(in: .rect(cornerRadius: 16))
                         .padding(.horizontal, 12)
