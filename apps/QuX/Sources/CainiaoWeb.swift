@@ -51,8 +51,12 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: LoginCompletion.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
+        configuration.userContentController.add(WeakLoginCompletionHandler(owner: self), name: "quxLoginCompletion")
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -76,6 +80,15 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         loading = true
         canSync = false
         activeNavigation = webView.load(request)
+    }
+
+    fileprivate func loginCompleted(_ message: WKScriptMessage) {
+        guard showingLogin, message.frameInfo.isMainFrame,
+              let origin = message.frameInfo.request.url, LoginNavigation.isLogin(origin),
+              (message.body as? String) == "completed" else { return }
+        // This resumes the requested page. Its own service still validates the
+        // session, and may request further authorization or verification.
+        reload()
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
@@ -253,4 +266,17 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         clearTimeout(timer);
     }
     """#
+}
+
+@MainActor
+private final class WeakLoginCompletionHandler: NSObject, WKScriptMessageHandler {
+    weak var owner: CainiaoBrowser?
+
+    init(owner: CainiaoBrowser) {
+        self.owner = owner
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        owner?.loginCompleted(message)
+    }
 }

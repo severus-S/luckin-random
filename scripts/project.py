@@ -16,6 +16,8 @@ def config(app):
     assert re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+){2,}", data["bundleId"]), "Invalid bundle ID"
     assert re.fullmatch(r"\d+\.\d+\.\d+", data["version"]), "Invalid version"
     assert re.fullmatch(r"\d+\.\d+", data["deploymentTarget"]), "Invalid deployment target"
+    if "buildNumber" in data:
+        assert type(data["buildNumber"]) is int and 0 < data["buildNumber"] < 1_000_000_000, "Invalid build number"
     assert isinstance(data.get('displayName', app), str) and re.fullmatch(r'[\w \u4e00-\u9fff.-]{1,50}', data.get('displayName', app)), 'Invalid display name'
     return folder, data
 
@@ -54,7 +56,7 @@ def generate(app):
         INFOPLIST_KEY_UILaunchScreen_Generation = YES;
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
         INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-        MARKETING_VERSION = {c['version']}; CURRENT_PROJECT_VERSION = 1;
+        MARKETING_VERSION = {c['version']}; CURRENT_PROJECT_VERSION = {c.get('buildNumber', 1)};
         {icon_settings}'''
     objects = f'''
 {uid(1)} = {{isa = PBXProject; buildConfigurationList = {uid(8)}; compatibilityVersion = "Xcode 14.0"; mainGroup = {uid(2)}; productRefGroup = {uid(3)}; projectDirPath = ""; targets = ({uid(4)},); }};
