@@ -305,6 +305,7 @@ private struct CainiaoSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var browser: CainiaoBrowser
     @State private var syncTask: Task<Void, Never>?
+    @State private var showDiagnostics = false
     @State private var status: String?
 
     init(page: CainiaoPage, save: @escaping ([Parcel]) throws -> Void) {
@@ -365,6 +366,7 @@ private struct CainiaoSheet: View {
                             .disabled(!browser.canSync || syncTask != nil)
                     }
                     Menu {
+                        Button("登录帮助与诊断", systemImage: "stethoscope") { showDiagnostics = true }
                         Button("重新登录", systemImage: "person.crop.circle.badge.checkmark") {
                             status = nil
                             browser.login()
@@ -378,6 +380,32 @@ private struct CainiaoSheet: View {
                     }
                     .disabled(syncTask != nil)
                 }
+            }
+        }
+        .sheet(isPresented: $showDiagnostics) {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("验证码后无法继续") .font(.headline)
+                        Text("可在系统设置 → App → 取X中，尝试开启‘允许跨网站跟踪’，然后完全关闭取X再重开。该开关由系统控制，取X无法读取或修改它。")
+                        Text("开启会降低本App内网页的跨站跟踪保护，可随时关闭。此项用于验证跨站Cookie兼容性，不代表已确定故障原因。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Button("打开取X系统设置") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                        }.buttonStyle(.glass)
+                        Divider()
+                        Text("本次登录诊断").font(.headline)
+                        Text("仅记录页面域名、请求类别、HTTP状态和事件。storage-no表示存储访问检查为否，不能单独证明故障原因。无手机号、验证码、请求正文、Cookie或票据。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Text(browser.diagnostics.isEmpty ? "尚未捕获登录事件。请返回登录页操作后再查看。" : browser.diagnostics.joined(separator: "\n"))
+                            .font(.caption.monospaced()).textSelection(.enabled)
+                        Button("复制诊断") {
+                            UIPasteboard.general.string = "取X 0.8.8 (15)\n" + browser.diagnostics.joined(separator: "\n")
+                        }.disabled(browser.diagnostics.isEmpty)
+                    }.padding()
+                }
+                .navigationTitle("登录帮助与诊断")
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showDiagnostics = false } } }
             }
         }
         .onDisappear { syncTask?.cancel() }

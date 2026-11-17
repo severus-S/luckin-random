@@ -19,6 +19,9 @@ def config(app):
     if "buildNumber" in data:
         assert type(data["buildNumber"]) is int and 0 < data["buildNumber"] < 1_000_000_000, "Invalid build number"
     assert isinstance(data.get('displayName', app), str) and re.fullmatch(r'[\w \u4e00-\u9fff.-]{1,50}', data.get('displayName', app)), 'Invalid display name'
+    purpose = data.get("crossWebsiteTrackingUsageDescription")
+    if purpose is not None:
+        assert isinstance(purpose, str) and 1 <= len(purpose) <= 300 and not any(ch in purpose for ch in "\r\n\x00"), "Invalid tracking purpose"
     return folder, data
 
 
@@ -47,6 +50,9 @@ def generate(app):
     icon_settings = ""
     if any((path / "AppIcon.appiconset/Contents.json").is_file() for path in catalogs):
         icon_settings = "ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;"
+    privacy_settings = ""
+    if c.get("crossWebsiteTrackingUsageDescription"):
+        privacy_settings = "INFOPLIST_KEY_NSCrossWebsiteTrackingUsageDescription = " + json.dumps(c["crossWebsiteTrackingUsageDescription"], ensure_ascii=False) + ";"
     settings = f'''CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = "";
         PRODUCT_BUNDLE_IDENTIFIER = "{c['bundleId']}"; PRODUCT_NAME = "{app}";
         SDKROOT = iphoneos; SUPPORTED_PLATFORMS = iphoneos; ARCHS = arm64;
@@ -57,7 +63,8 @@ def generate(app):
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
         INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
         MARKETING_VERSION = {c['version']}; CURRENT_PROJECT_VERSION = {c.get('buildNumber', 1)};
-        {icon_settings}'''
+        {icon_settings}
+        {privacy_settings}'''
     objects = f'''
 {uid(1)} = {{isa = PBXProject; buildConfigurationList = {uid(8)}; compatibilityVersion = "Xcode 14.0"; mainGroup = {uid(2)}; productRefGroup = {uid(3)}; projectDirPath = ""; targets = ({uid(4)},); }};
 {uid(2)} = {{isa = PBXGroup; children = ({','.join(refs)},{uid(3)},); sourceTree = "<group>"; }};

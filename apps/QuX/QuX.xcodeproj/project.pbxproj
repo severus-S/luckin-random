@@ -2,11 +2,11 @@
 { archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
 
 000000000000000000000001 = {isa = PBXProject; buildConfigurationList = 000000000000000000000008; compatibilityVersion = "Xcode 14.0"; mainGroup = 000000000000000000000002; productRefGroup = 000000000000000000000003; projectDirPath = ""; targets = (000000000000000000000004,); };
-000000000000000000000002 = {isa = PBXGroup; children = (000000000000000000000064,000000000000000000000066,000000000000000000000068,00000000000000000000006A,00000000000000000000006C,00000000000000000000006E,000000000000000000000070,000000000000000000000072,000000000000000000000074,000000000000000000002710,000000000000000000000003,); sourceTree = "<group>"; };
+000000000000000000000002 = {isa = PBXGroup; children = (000000000000000000000064,000000000000000000000066,000000000000000000000068,00000000000000000000006A,00000000000000000000006C,00000000000000000000006E,000000000000000000000070,000000000000000000000072,000000000000000000000074,000000000000000000000076,000000000000000000002710,000000000000000000000003,); sourceTree = "<group>"; };
 000000000000000000000003 = {isa = PBXGroup; children = (000000000000000000000005,); name = Products; sourceTree = "<group>"; };
 000000000000000000000004 = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000009; buildPhases = (000000000000000000000006, 000000000000000000000007, 00000000000000000000000C,); buildRules = (); dependencies = (); name = "QuX"; productName = "QuX"; productReference = 000000000000000000000005; productType = "com.apple.product-type.application"; };
 000000000000000000000005 = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "QuX.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-000000000000000000000006 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000065,000000000000000000000067,000000000000000000000069,00000000000000000000006B,00000000000000000000006D,00000000000000000000006F,000000000000000000000071,000000000000000000000073,000000000000000000000075,); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000006 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000065,000000000000000000000067,000000000000000000000069,00000000000000000000006B,00000000000000000000006D,00000000000000000000006F,000000000000000000000071,000000000000000000000073,000000000000000000000075,000000000000000000000077,); runOnlyForDeploymentPostprocessing = 0; };
 000000000000000000000007 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 00000000000000000000000C = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000002711,); runOnlyForDeploymentPostprocessing = 0; };
 000000000000000000000008 = {isa = XCConfigurationList; buildConfigurations = (00000000000000000000000A,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
@@ -21,26 +21,29 @@
         INFOPLIST_KEY_UILaunchScreen_Generation = YES;
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
         INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-        MARKETING_VERSION = 0.8.7; CURRENT_PROJECT_VERSION = 14;
-        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;}; name = Release; };
+        MARKETING_VERSION = 0.8.8; CURRENT_PROJECT_VERSION = 15;
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        INFOPLIST_KEY_NSCrossWebsiteTrackingUsageDescription = "可选择允许菜鸟、淘宝和天猫登录网页共享跨站 Cookie，以排查验证码后无法继续的问题。开启会降低取X内网页的跨站跟踪保护，可随时在系统设置关闭。";}; name = Release; };
 000000000000000000000064 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/App.swift"; sourceTree = "<group>"; };
 000000000000000000000065 = {isa = PBXBuildFile; fileRef = 000000000000000000000064; };
-000000000000000000000066 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/CainiaoLogin.swift"; sourceTree = "<group>"; };
+000000000000000000000066 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/AuthDiagnostics.swift"; sourceTree = "<group>"; };
 000000000000000000000067 = {isa = PBXBuildFile; fileRef = 000000000000000000000066; };
-000000000000000000000068 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/CainiaoSession.swift"; sourceTree = "<group>"; };
+000000000000000000000068 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/CainiaoLogin.swift"; sourceTree = "<group>"; };
 000000000000000000000069 = {isa = PBXBuildFile; fileRef = 000000000000000000000068; };
-00000000000000000000006A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/CainiaoWeb.swift"; sourceTree = "<group>"; };
+00000000000000000000006A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/CainiaoSession.swift"; sourceTree = "<group>"; };
 00000000000000000000006B = {isa = PBXBuildFile; fileRef = 00000000000000000000006A; };
-00000000000000000000006C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/ContentView.swift"; sourceTree = "<group>"; };
+00000000000000000000006C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/CainiaoWeb.swift"; sourceTree = "<group>"; };
 00000000000000000000006D = {isa = PBXBuildFile; fileRef = 00000000000000000000006C; };
-00000000000000000000006E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/GlassStyle.swift"; sourceTree = "<group>"; };
+00000000000000000000006E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/ContentView.swift"; sourceTree = "<group>"; };
 00000000000000000000006F = {isa = PBXBuildFile; fileRef = 00000000000000000000006E; };
-000000000000000000000070 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/LoginNavigation.swift"; sourceTree = "<group>"; };
+000000000000000000000070 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/GlassStyle.swift"; sourceTree = "<group>"; };
 000000000000000000000071 = {isa = PBXBuildFile; fileRef = 000000000000000000000070; };
-000000000000000000000072 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/NavigationFailure.swift"; sourceTree = "<group>"; };
+000000000000000000000072 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/LoginNavigation.swift"; sourceTree = "<group>"; };
 000000000000000000000073 = {isa = PBXBuildFile; fileRef = 000000000000000000000072; };
-000000000000000000000074 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Parcel.swift"; sourceTree = "<group>"; };
+000000000000000000000074 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/NavigationFailure.swift"; sourceTree = "<group>"; };
 000000000000000000000075 = {isa = PBXBuildFile; fileRef = 000000000000000000000074; };
+000000000000000000000076 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Parcel.swift"; sourceTree = "<group>"; };
+000000000000000000000077 = {isa = PBXBuildFile; fileRef = 000000000000000000000076; };
 000000000000000000002710 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Resources/Assets.xcassets"; sourceTree = "<group>"; };
 000000000000000000002711 = {isa = PBXBuildFile; fileRef = 000000000000000000002710; };
 }; rootObject = 000000000000000000000001; }

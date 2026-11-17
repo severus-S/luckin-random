@@ -42,6 +42,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     @Published var canSync = false
     @Published var message: String?
     @Published var showingLogin = false
+    @Published var diagnostics: [String] = []
 
     private let page: CainiaoPage
     private var activeNavigation: WKNavigation?
@@ -51,16 +52,46 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
     init(page: CainiaoPage) {
         self.page = page
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+        configuration.websiteDataStore = WKWebsiteDataStore.default()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        configuration.allowsInlineMediaPlayback = true
+        if #available(iOS 14.0, *) {
+            configuration.limitsNavigationsToAppBoundDomains = false
+        }
+        configuration.userContentController.addUserScript(WKUserScript(source: Self.inputCompatibilityScript,
+            injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+        configuration.userContentController.addUserScript(WKUserScript(source: AuthDiagnostics.script,
+            injectionTime: .atDocumentStart, forMainFrameOnly: false))
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
+        configuration.userContentController.add(AuthDiagnosticsHandler(owner: self), name: "quxDiagnostics")
+        webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         webView.isOpaque = false
         webView.backgroundColor = .clear
         reload()
+    }
+
+    static let inputCompatibilityScript = #"""
+    (function() {
+        document.addEventListener('input', function(e) {
+            var target = e.target;
+            if (target && target.tagName === 'INPUT') {
+                target.dispatchEvent(new Event('change', { bubbles: true }));
+                target.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: target.value }));
+            }
+        }, true);
+    })();
+    """#
+
+    fileprivate func recordDiagnostic(_ message: WKScriptMessage) {
+        guard let url = message.frameInfo.request.url, LoginNavigation.allows(url),
+              let host = url.host?.lowercased(),
+              let line = AuthDiagnostics.line(host: host, mainFrame: message.frameInfo.isMainFrame, body: message.body) else { return }
+        diagnostics.append(line)
+        if diagnostics.count > 80 { diagnostics.removeFirst(diagnostics.count - 80) }
     }
 
     func reload() {
@@ -89,6 +120,11 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let scheme = action.request.url?.scheme?.lowercased(),
+              ["http", "https", "about"].contains(scheme) else {
+            decisionHandler(.cancel)
+            return
+        }
         if let url = action.request.url, let fallback = LoginNavigation.webFallback(url),
            action.targetFrame?.isMainFrame != false {
             decisionHandler(.cancel)
@@ -98,7 +134,7 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             return
         }
         guard let url = action.request.url,
-              CainiaoPage.allows(url) || (url.absoluteString == "about:blank" && action.targetFrame?.isMainFrame == false) else {
+              CainiaoPage.allows(url) || url.absoluteString == "about:blank" else {
             if action.targetFrame?.isMainFrame != false {
                 loading = false
                 message = LoginNavigation.blockedMessage(action.request.url)
@@ -124,12 +160,30 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
             // target frame and return address even when no Cainiao attempt exists.
             showingLogin = true
         }
-        if action.targetFrame == nil {
-            decisionHandler(.cancel)
-            load(action.request)
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        guard let response = navigationResponse.response as? HTTPURLResponse,
+              let url = response.url else {
+            decisionHandler(.allow)
             return
         }
-        decisionHandler(.allow)
+        var headers: [String: String] = [:]
+        for (key, value) in response.allHeaderFields {
+            headers[String(describing: key)] = String(describing: value)
+        }
+        let cookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
+        let writes = DispatchGroup()
+        for cookie in cookies {
+            writes.enter()
+            webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie) {
+                writes.leave()
+            }
+        }
+        // Complete once, after every asynchronous Cookie write has finished.
+        writes.notify(queue: .main) { decisionHandler(.allow) }
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -162,16 +216,12 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        guard let original = navigationAction.request.url else { return nil }
-        let url = LoginNavigation.webFallback(original) ?? original
-        guard CainiaoPage.allows(url) else {
-            loading = false
-            message = LoginNavigation.blockedMessage(original)
-            return nil
+        if navigationAction.targetFrame == nil || !(navigationAction.targetFrame!.isMainFrame) {
+            message = nil
+            loading = true
+            canSync = false
+            activeNavigation = webView.load(navigationAction.request)
         }
-        var request = navigationAction.request
-        request.url = url
-        load(request)
         return nil
     }
 
@@ -310,4 +360,13 @@ final class CainiaoBrowser: NSObject, ObservableObject, WKNavigationDelegate, WK
         clearTimeout(timer);
     }
     """#
+}
+
+@MainActor
+private final class AuthDiagnosticsHandler: NSObject, WKScriptMessageHandler {
+    weak var owner: CainiaoBrowser?
+    init(owner: CainiaoBrowser) { self.owner = owner }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        owner?.recordDiagnostic(message)
+    }
 }
