@@ -1,0 +1,10 @@
+{
+  "name": "PGHair",
+  "bundleId": "com.sjx13.ios.pghair",
+  "version": "0.1.0",
+  "deploymentTarget": "17.0",
+  "displayName": "轻吹",
+  "buildNumber": 1,
+  "testPackage": true,
+  "cameraUsageDescription": "扫描胖乖生活吹风机二维码，识别你要使用的设备。"
+}
