@@ -51,7 +51,7 @@ enum HairPolicy {
     static let loginPaths: Set<String> = ["/login", idlePath, "/user/UserAgreement/UserAgreement", "/user/UserAgreement/newUserAgreement", "/user/UserAgreement/userPrivacy/legalPrivacy", "/user/privacyPolicy/privacyPolicy", "/user/privacyPolicy/newPrivacyPolicy", "/user/UserAgreement/userPrivacy/thirdSharing", "/user/UserAgreement/userPrivacy/systemRight", "/user/UserAgreement/userPrivacy/mansCollection"]
     static let apiPaths: Set<String> = ["user/info", "goods/scan/v2", "goods/normal/details", "machine/detail", "order/list"]
     static func scanParameters(_ raw: String) throws -> [String: String] {
-        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let s = raw.trimmingCharacters(in: .whitespaces)
         guard (1...4096).contains(s.count), !s.contains(where: { $0.isNewline || $0.asciiValue == 0 }) else { throw HairError(message: "二维码内容无效。") }
         // Official scanCodeInit extracts these three identifiers; the scanned URL is never opened.
         guard let u = URLComponents(string: s), ["https", "http"].contains(u.scheme?.lowercased() ?? ""), u.host != nil else { throw HairError(message: "暂不支持这种码，请扫描胖乖生活吹风机的完整二维码。") }

@@ -12,7 +12,7 @@ final class HairCoreTests: XCTestCase {
         XCTAssertThrowsError(try HairPolicy.scanParameters("https://h5.qiekj.com/?NQT=a%26token%3Dsecret"))
     }
     func testUnrecognizedAndAmbiguousCodesAreRefused() {
-        for value in ["", "12345", "javascript:alert(1)", "https://example.test/", "https://x/?NQT=1&NQT=2", "https://x/?NQT=1\n", "https://x/?NQT=" ] { XCTAssertThrowsError(try HairPolicy.scanParameters(value)) }
+        for value in ["", "12345", "javascript:alert(1)", "https://example.test/", "https://x/?NQT=1&NQT=2", "https://x/?NQT=1\n", "https://x/?NQT=" ] { XCTAssertThrowsError(try HairPolicy.scanParameters(value), "Accepted invalid input: \(value.debugDescription)") }
     }
     func testMiniProgramIdentityAndPageAreFixed() throws {
         let url = try HairPolicy.miniProgramURL(["NQT": "abc"])
