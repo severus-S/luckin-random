@@ -27,3 +27,11 @@
 2026-11-05：运行 41871798205 最终失败，check-run 注释明确报告 hosted runner 多次领取失败及 macOS arm64 capacity constraints，steps 为空。标签与权限有效不代表资源可用；此前记录为当时状态，不作为成功保证。使用独立 codex/luckin-random-intel 分支测试官方免费标准 macos-15-intel，不改默认 main 的稳定配置，待真实构建验证后再决定合入。
 
 2026-11-05 Intel 实测：运行 41875147576 成功分配免费标准 macos-15-intel，27 项后端测试和 6 项 Swift 核心测试通过；Xcode 16.4 / iPhoneOS SDK 18.5 已实际进入编译。AppStore 初始化中的局部 error 与 catch 隐式 error 冲突导致编译失败，已改名 loadFailure，等待真实复测。此失败是源码编译错误，区别于之前 ARM runner 分配失败。
+
+<!-- UWASH_SCAN_FIX_20261121 -->
+### 2026-11-21：净洗0.2.1(3)扫码响应层级修复
+
+用户截图反馈扫码后“设备或订单编号格式不正确”。APK home 的 scanCodeNavigator 明确取 e.result，官方 H5 取 t.data.result；0.2.0 解包 data 后直接读 deviceId，少了 result 层。修复从 result 分流可用设备、已有订单和不可用状态；设备详情核对扫码 ID，错误不反射手机号。保留网页先登录、扫码识别、按钮跳转支付宝的流程及原有 Bundle ID。
+
+新增6项契约回归，共28项Swift核心测试待云端执行；本地语法检查和4项selftest通过。构建及IPA校验结果完成后追加。用户截图仅证实旧版故障，不作为新版真机成功证据。没有操作电脑界面、发送短信、下单或控制设备。
+<!-- END_UWASH_SCAN_FIX_20261121 -->

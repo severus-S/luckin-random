@@ -28,6 +28,42 @@ final class LaundryCoreTests: XCTestCase {
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(try JSONDecoder().decode(JSON.self, from: XCTUnwrap(request.httpBody)), body)
     }
+    func testOfficialNestedScanEnvelopeReachesMatchingWasher() throws {
+        let response = Data("{\"code\":0,\"data\":{\"result\":{\"deviceId\":9223372036854775801,\"createOrderEnabled\":true,\"moduleType\":7}}}".utf8)
+        let data = try LaundryProtocol.unwrap(response, status: 200)
+        XCTAssertTrue(data["deviceId"].text.isEmpty, "The old parser read this wrong level")
+        guard case .device(let id) = try LaundryProtocol.scanTarget(data) else { return XCTFail("Expected washer") }
+        XCTAssertEqual(id, "9223372036854775801")
+        let request = try LaundryProtocol.request(path: "app/washer/devices/program/info", query: ["deviceId": id], token: "fixture")
+        XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, id)
+        let device = try LaundryProtocol.washerDevice(json("{\"deviceId\":9223372036854775801,\"type\":1}"), expectedID: id)
+        XCTAssertEqual(device["deviceId"].text, id)
+    }
+    func testStringDeviceIDFromNestedScanResult() throws {
+        XCTAssertEqual(try LaundryProtocol.scanTarget(json("{\"result\":{\"deviceId\":\"washer-abc_123\",\"createOrderEnabled\":true}}")), .device("washer-abc_123"))
+    }
+    func testExistingOrderIsNotTreatedAsMissingDeviceID() throws {
+        let data = try json("{\"result\":{\"createOrderEnabled\":false,\"orderId\":9223372036854775801}}")
+        XCTAssertEqual(try LaundryProtocol.scanTarget(data), .existingOrder("9223372036854775801"))
+    }
+    func testUnavailableDeviceDoesNotReportIdentifierFormat() throws {
+        let data = try json("{\"result\":{\"createOrderEnabled\":false,\"reason\":\"private-mobile\"}}")
+        XCTAssertThrowsError(try LaundryProtocol.scanTarget(data)) {
+            XCTAssertTrue($0.localizedDescription.contains("当前不可使用"))
+            XCTAssertFalse($0.localizedDescription.contains("编号格式"))
+            XCTAssertFalse($0.localizedDescription.contains("private-mobile"))
+        }
+    }
+    func testMalformedScanResultDoesNotReachDeviceRequest() throws {
+        for raw in ["null", "{}", "{\"deviceId\":123,\"createOrderEnabled\":true}", "{\"result\":null}", "{\"result\":[]}", "{\"result\":{}}", "{\"result\":{\"createOrderEnabled\":true}}", "{\"result\":{\"createOrderEnabled\":\"true\",\"deviceId\":123}}", "{\"result\":{\"createOrderEnabled\":true,\"deviceId\":\"../123\"}}", "{\"result\":{\"createOrderEnabled\":false,\"orderId\":\"../123\"}}"] {
+            XCTAssertThrowsError(try LaundryProtocol.scanTarget(json(raw)), raw)
+        }
+    }
+    func testWasherDetailMustMatchScannedDevice() throws {
+        let device = try json("{\"deviceId\":123,\"type\":1}")
+        XCTAssertNoThrow(try LaundryProtocol.washerDevice(device, expectedID: "123"))
+        XCTAssertThrowsError(try LaundryProtocol.washerDevice(device, expectedID: "456"))
+    }
     func testReadOnlyRequestsKeepTokenInHeader() throws {
         let request = try LaundryProtocol.request(path: "orders/history", query: ["page": "1", "size": "20"], token: "fixture-secret")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture-secret")

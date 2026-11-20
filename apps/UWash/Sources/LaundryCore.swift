@@ -42,6 +42,11 @@ struct LaundryError: LocalizedError {
     var errorDescription: String? { message }
 }
 
+enum WasherScanTarget: Equatable {
+    case device(String)
+    case existingOrder(String)
+}
+
 enum LaundryProtocol {
     static let base = URL(string: "https://phoenix.ujing.online/api/v1/")!
     static let apiVersion = "2.4.15"
@@ -94,8 +99,24 @@ enum LaundryProtocol {
         let route = (url.fragment ?? "").components(separatedBy: "?").first ?? ""
         return ["/login", "/__uwash__"].contains(route)
     }
-    static func washerDevice(_ info: JSON) throws -> JSON {
+    static func scanTarget(_ data: JSON) throws -> WasherScanTarget {
+        // Both the official Weex client and H5 read the scan payload from data.result.
+        guard case .object = data["result"] else { throw LaundryError(message: "扫码服务未返回完整设备信息，请重新扫码。") }
+        let result = data["result"]
+        if result["createOrderEnabled"] == .bool(false) {
+            if !result["orderId"].text.isEmpty {
+                guard let id = try? identifier(result["orderId"].text) else { throw LaundryError(message: "扫码服务返回的订单信息无效，请在官方 U净查看订单。") }
+                return .existingOrder(id)
+            }
+            throw LaundryError(message: "这台设备当前不可使用，请检查机器状态或在官方 U净查看原因。")
+        }
+        guard result["createOrderEnabled"] == .bool(true) else { throw LaundryError(message: "扫码服务未返回可用状态，请重新扫码。") }
+        guard let id = try? identifier(result["deviceId"].text) else { throw LaundryError(message: "扫码服务未返回有效洗衣机编号，请重新扫码。") }
+        return .device(id)
+    }
+    static func washerDevice(_ info: JSON, expectedID: String? = nil) throws -> JSON {
         guard !info["deviceId"].text.isEmpty, info["type"].integer == 1 else { throw LaundryError(message: "未确认这是洗衣机，本版只接入自助洗衣设备。") }
+        guard expectedID == nil || info["deviceId"].text == expectedID else { throw LaundryError(message: "设备资料与扫码结果不一致，请重新扫码。") }
         return info
     }
     static func handoffQRCode(_ text: String) throws -> String {

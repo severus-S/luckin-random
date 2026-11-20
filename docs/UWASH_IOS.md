@@ -1,4 +1,4 @@
-# 净洗（UWash）0.2.0 (2)：网页登录与支付宝洗衣交接
+# 净洗（UWash）0.2.1 (3)：修复扫码响应解析
 
 2026-11-21。用户要求沿用已反馈成功的轻吹流程：在净洗内完成官方网页登录，扫码识别洗衣机，点击“去支付宝选择程序并使用”，再由 U净官方支付宝小程序完成程序选择、下单、付款和设备启动。
 
@@ -8,7 +8,7 @@ Bundle ID 保持 `com.sjx13.ios.uwash`，最低 iOS 17.0。复用原 SwiftUI 工
 
 1. 登录面板显示真正的 U净官方 H5 `https://wx.zhinengxiyifang.cn/static/washer-h5/commonWasher/latest/index.html#/login`。手机号、验证码和可能出现的校验由官方网页处理。删除原生手机号/验证码表单及隐藏 getCode 桥，不自动发送验证码。
 2. 用户点击“完成登录”时，仅在固定官方登录文档读取 localStorage.token。随后用该令牌请求 orders/running 验证会话；仅验证成功才保存至本机 Keychain。不是读取到任意非空值就宣称登录成功。网页登录守卫只允许登录和内部返回空路由，避免进入官方商城、首页和收银页；不绕过认证或验证码。
-3. 登录后扫码或粘贴完整二维码。原值只传给固定 Phoenix API 的 POST devices/scanWasherCode，再 GET app/washer/devices/program/info。只在返回明确 deviceId 且 type=1（洗衣）时显示使用按钮。二维码 URL 不作为浏览器目标打开，也不把其他设备当洗衣机。
+3. 登录后扫码或粘贴完整二维码。原值只传给固定 Phoenix API 的 POST devices/scanWasherCode，从 data.result 读取状态及设备/订单编号，再 GET app/washer/devices/program/info。已有订单先读取详情，设备不可用则显示对应提示。只在返回明确 deviceId 且 type=1（洗衣）时显示使用按钮。二维码 URL 不作为浏览器目标打开，也不把其他设备当洗衣机。
 4. 用户点“去支付宝选择程序并使用”并确认后，才调用系统打开固定的 U净小程序。二维码作为嵌套 qrcode 参数携带，保留 +、%、&、# 的编码层级；本机登录令牌不进入跳转链接。
 5. 支付宝负责后续选择、实际付款和启动；本地不创建订单、不调用支付参数/启停/取消接口，不把打开支付宝等同于支付成功。返回后可手动刷新原生订单列表和详情。支付宝与 H5 可能需要各自授权、可能是不同账号，应在支付宝核对账号和机器。
 
@@ -44,3 +44,13 @@ Bundle ID 保持 `com.sjx13.ios.uwash`，最低 iOS 17.0。复用原 SwiftUI 工
 最终 Run44772196096 / attempt2，源码提交 `a0b8591169316b64de8721b3bc4b4d59a99dd2ab`：Xcode27.2编译和22项Swift核心测试全部通过；本地9个Swift文件语法、4项工作区selftest和登录守卫离线JS检查通过。已下载核对 manifest 来源、ZIP CRC、0.2.0(2)、com.sjx13.ios.uwash、iOS17.0、arm64、AppIcon和相机用途键；无ATS全局例外、LC_CODE_SIGNATURE、签名目录或描述文件。IPA 214582字节，SHA-256 `287888d7f76d3c55b37d424b22958242e11355188df918c2609f914d76b23c45`。交付 `artifacts/latest/UWash/UWash-unsigned.ipa`，旧0.1.0归档至 `artifacts/archive/UWash/0.1.0-1/`。
 
 首次attempt1同样编译及22项测试通过，但本机直连/代理下载Actions存储站失败；因此对同一源码重跑产物上传，最终通过GitHub连接器取得attempt2 ZIP，并在本地校验。没有改变工作流、构建脚本或系统代理配置。两次构建不是洗衣真机验收；网页登录、支付宝设备自动带入、实际洗衣及本次版本签名安装/续签仍待用户验证。
+
+<!-- UWASH_SCAN_FIX_20261121 -->
+## 0.2.1：扫码后设备编号错误
+
+用户截图显示扫码后弹出“设备或订单编号格式不正确”。核对 APK home 脚本 scanCodeNavigator 使用 e.result，官方 H5 chunk-2f348e04.js 的 getDeviceStatusWasher 使用 t.data.result；通用 unwrap 已剥掉 data，0.2.0 的 identify 却读取 data.deviceId，得到空值后触发通用编号错误。这是本地响应层级解析错误，不是证据表明用户扫错码。
+
+新增 scanTarget，按 data.result 的 createOrderEnabled 和 deviceId/orderId 分流：可用设备读取程序资料并核对 ID；已有订单读取详情并提示到订单页查看；不可用、缺字段和异常响应分别给出设备相关提示，不反射服务器中的手机号/原因。没有放宽编号校验，也没有跳过网页登录或洗衣机分类校验。点使用按钮后仍交给官方支付宝完成程序选择与付款。
+
+增加6项针对真实客户端契约的离线回归，覆盖完整 code/data/result 响应、长数字编号、字符串编号、已有订单、不可用与缺失/错误字段，以及详情 ID 不一致。共28项Swift测试待云端运行；本地9个Swift文件语法检查和4项工作区selftest已通过。修复后的实际扫码/支付宝交接仍需用户手机验收。
+<!-- END_UWASH_SCAN_FIX_20261121 -->

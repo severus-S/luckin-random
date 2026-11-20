@@ -79,13 +79,19 @@ enum CredentialStore {
     }
     func clearDevice() { device = .null; deviceQRCode = ""; note = "" }
     func identify(_ raw: String) async throws {
-        clearDevice(); note = ""
+        clearDevice(); order = .null
         guard loggedIn else { throw LaundryError(message: "请先完成 U净网页登录。") }
         let qr = try LaundryProtocol.handoffQRCode(raw)
-        let parsed = try await api.call("devices/scanWasherCode", method: "POST", body: .object(["qrCode": .string(qr)]), token: token)
-        let id = try LaundryProtocol.identifier(parsed["deviceId"].text)
+        let data = try await api.call("devices/scanWasherCode", method: "POST", body: .object(["qrCode": .string(qr)]), token: token)
+        let target = try LaundryProtocol.scanTarget(data)
+        if case .existingOrder(let id) = target {
+            try await loadOrder(id)
+            note = "扫描结果关联已有订单，请在订单页查看此订单，避免重复下单。"
+            return
+        }
+        guard case .device(let id) = target else { return }
         let info = try await api.call("app/washer/devices/program/info", query: ["deviceId": id], token: token)
-        device = try LaundryProtocol.washerDevice(info)
+        device = try LaundryProtocol.washerDevice(info, expectedID: id)
         deviceQRCode = qr
         note = "已识别洗衣机。点击下方按钮，在 U净支付宝小程序选择洗衣程序并核对付款。"
     }
