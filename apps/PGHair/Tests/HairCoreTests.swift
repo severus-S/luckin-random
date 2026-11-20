@@ -30,6 +30,15 @@ final class HairCoreTests: XCTestCase {
         XCTAssertThrowsError(try HairPolicy.miniProgramURL(["appId": "evil"]))
         XCTAssertThrowsError(try HairPolicy.miniProgramURL([:]))
     }
+    func testEncodedDeviceTokensSurviveBothURLLayers() throws {
+        let parameters = try HairPolicy.scanParameters("https://h5.qiekj.com/?NQT=abc%2Bdef%2F123%3D")
+        XCTAssertEqual(parameters["NQT"], "abc+def/123=")
+        let url = try HairPolicy.miniProgramURL(parameters)
+        let nested = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "query" }!.value!
+        XCTAssertTrue(nested.contains("%2B"))
+        let decoded = URLComponents(string: "https://placeholder.invalid/?" + nested)!.queryItems!.first { $0.name == "NQT" }!.value!
+        XCTAssertEqual(decoded, parameters["NQT"])
+    }
     func testOnlyHairDryerCategoryIsAccepted() throws {
         XCTAssertTrue(HairPolicy.isHairDevice(try decode("{\"categoryCode\":\"03\"}"), type: "goods"))
         for category in ["00", "01", "02", "05", "08", "0301"] { XCTAssertFalse(HairPolicy.isHairDevice(try decode("{\"categoryCode\":\"\(category)\"}"), type: "goods")) }

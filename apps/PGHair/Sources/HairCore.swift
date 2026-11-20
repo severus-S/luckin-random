@@ -62,7 +62,7 @@ enum HairPolicy {
             let values = q.filter { $0.name == key }.compactMap(\.value)
             guard values.count <= 1 else { throw HairError(message: "二维码中设备标识重复，请重新扫描。") }
             if let value = values.first, !value.isEmpty {
-                guard value.count <= 256, value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "-_.".contains($0)) }) else { throw HairError(message: "二维码中的设备标识格式不正确。") }
+                guard value.count <= 256, value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "-_.+/=".contains($0)) }) else { throw HairError(message: "二维码中的设备标识格式不正确。") }
                 output[key] = value
             }
         }
@@ -74,7 +74,8 @@ enum HairPolicy {
         var nested = URLComponents()
         nested.queryItems = [URLQueryItem(name: "keepUsing", value: "1")] + params.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         var link = URLComponents(string: "alipays://platformapi/startapp")!
-        link.queryItems = [URLQueryItem(name: "appId", value: "2018072460764274"), URLQueryItem(name: "page", value: "pages/skipNew/skipNew"), URLQueryItem(name: "query", value: nested.percentEncodedQuery)]
+        let nestedQuery = nested.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        link.queryItems = [URLQueryItem(name: "appId", value: "2018072460764274"), URLQueryItem(name: "page", value: "pages/skipNew/skipNew"), URLQueryItem(name: "query", value: nestedQuery)]
         return link.url!
     }
     static func isHairDevice(_ info: JSON, type: String) -> Bool {
