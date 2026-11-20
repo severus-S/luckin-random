@@ -53,3 +53,5 @@ SwiftUI 原生洗衣/订单/账号三页；AVFoundation 扫码与手动二维码
 本地 Swift tree-sitter 语法检查与工作区 selftest 四项通过。Swift 包单测覆盖响应/认证失败、请求目标与查询编码、二维码保留、长订单号、洗衣价格分单位、未知/蓝牙机型阻止下单、门店限制和强制附加项目、支付地址边界；具体云端编译与产物结果见 docs/VALIDATION.md。
 
 来源费用说明：https://docs.github.com/en/actions/reference/runners/github-hosted-runners 、 https://docs.github.com/en/actions/concepts/billing-and-usage ，查证 2026-11-20。
+
+首次 Run 44761583272：16 项 Swift 包测试通过，Xcode 编译在 ContentView.swift 的 Section(title) + footer 写法处失败。已改为显式 header/footer 构造；这次失败运行没有交付 IPA，不涉及支付或账号请求。

@@ -173,22 +173,22 @@ struct OrderPanel: View {
                 Button("刷新此订单") { session.perform { try await session.loadOrder(order["orderId"].text) } }.disabled(session.busy)
             }
             if order["status"].text == "10" {
-                Section("付款") {
+                Section {
                     Button("查询可用支付方式") { session.perform { try await session.loadPaymentMethods() } }.disabled(session.busy)
                     if !session.paymentMethods.isEmpty {
                         Toggle("使用 U净余额红包抵扣", isOn: $useBalance)
                         ForEach(Array(session.paymentMethods.enumerated()), id: \.offset) { _, method in Button(method.firstText("name", "channel")) { payMethod = method; confirmPay = true }.disabled(session.busy) }
                     }
                     Button("取消订单", role: .destructive) { confirmCancel = true }.disabled(session.busy)
-                } footer: { Text("仅显示本版能处理的网页支付渠道；官方 App SDK 支付尚未接入。") }
+                } header: { Text("付款") } footer: { Text("仅显示本版能处理的网页支付渠道；官方 App SDK 支付尚未接入。") }
             }
             if LaundryProtocol.bluetoothRequired(order) {
                 Section { Text("这台设备需要专用蓝牙协议，请在官方 U净完成启动。") }
             } else if LaundryProtocol.networkControlSupported(order), ["20", "35", "40"].contains(order["status"].text) {
-                Section("控制设备") {
+                Section {
                     if ["20", "35"].contains(order["status"].text) { controlButton("start") }
                     if order["status"].text == "40" { controlButton("stop") }
-                } footer: { Text("指令受理后请观察机器实际状态。") }
+                } header: { Text("控制设备") } footer: { Text("指令受理后请观察机器实际状态。") }
             }
         }
         .confirmationDialog("确认取消此订单？", isPresented: $confirmCancel, titleVisibility: .visible) {
