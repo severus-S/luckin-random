@@ -57,6 +57,10 @@ def generate(app):
     generated_info = {}
     if c.get("crossWebsiteTrackingUsageDescription"):
         generated_info["NSCrossWebsiteTrackingUsageDescription"] = c["crossWebsiteTrackingUsageDescription"]
+    camera_purpose = c.get("cameraUsageDescription")
+    if camera_purpose is not None:
+        assert isinstance(camera_purpose, str) and 1 <= len(camera_purpose) <= 300 and not any(ch in camera_purpose for ch in "\r\n\x00"), "Invalid camera purpose"
+        generated_info["NSCameraUsageDescription"] = camera_purpose
     if c.get("allowArbitraryNetworkLoads"):
         generated_info["NSAppTransportSecurity"] = {"NSAllowsArbitraryLoads": True}
     if generated_info:
