@@ -50,7 +50,7 @@ enum LaundryProtocol {
         if status == 401 || status == 403 { throw LaundryError(message: "登录已失效，请重新登录（HTTP \(status)）。") }
         guard status == 200 else { throw LaundryError(message: "服务暂不可用（HTTP \(status)），请稍后重试。") }
         guard let value, value["code"].integer == 0 else {
-            let code = value?["code"].text ?? "UNKNOWN"
+            let code = value?["code"].integer.map(String.init) ?? "UNKNOWN"
             // Server text may contain credentials or reflected input. Keep diagnostics bounded and value-free.
             throw LaundryError(message: "服务端未完成请求（代码 \(code.prefix(20))）。请检查账号、设备状态后重试。")
         }
@@ -59,6 +59,12 @@ enum LaundryProtocol {
     }
     static func request(path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil, token: String = "") throws -> URLRequest {
         guard !path.contains("://"), !path.contains(".."), !path.hasPrefix("/"), !path.contains("?"), !path.contains("#") else { throw LaundryError(message: "无效的接口地址。") }
+        let pieces = path.split(separator: "/").map(String.init)
+        let detail = pieces.count == 3 && pieces[0] == "orders" && pieces[2] == "detail" && (try? identifier(pieces[1])) != nil
+        let read = method == "GET" && (path == "orders/running" || path == "orders/history" || detail || path == "app/washer/devices/program/info") && body == nil
+        let scan = method == "POST" && path == "devices/scanWasherCode"
+        guard read || scan else { throw LaundryError(message: "登录请使用官方网页；选择程序、下单、付款和设备操作请在 U净支付宝小程序完成。") }
+        guard !token.isEmpty else { throw LaundryError(message: "请先完成 U净网页登录。") }
         var parts = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         if !query.isEmpty { parts.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) } }
         var r = URLRequest(url: parts.url!, timeoutInterval: 20)
@@ -75,11 +81,50 @@ enum LaundryProtocol {
         guard !text.isEmpty, text.count <= 100, text.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else { throw LaundryError(message: "设备或订单编号格式不正确。") }
         return text
     }
-    static func qrCode(_ text: String) throws -> String {
-        let s = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    // The APK links this exact Ujing mini-program homepage. The qrcode query is
+    // an experimental handoff inferred from Ujing's H5; recognition needs a phone test.
+    static let alipayAppID = "2021002174638299"
+    static let alipayHomePage = "pages/home/home"
+    static let loginPage = "https://wx.zhinengxiyifang.cn/static/washer-h5/commonWasher/latest/index.html"
+    static let loginURL = URL(string: loginPage + "#/login")!
+    static func isLoginDocument(_ url: URL) -> Bool {
+        guard url.scheme == "https", url.host == "wx.zhinengxiyifang.cn", url.port == nil || url.port == 443,
+              url.user == nil, url.password == nil,
+              url.path == "/static/washer-h5/commonWasher/latest/index.html" else { return false }
+        let route = (url.fragment ?? "").components(separatedBy: "?").first ?? ""
+        return ["/login", "/__uwash__"].contains(route)
+    }
+    static func washerDevice(_ info: JSON) throws -> JSON {
+        guard !info["deviceId"].text.isEmpty, info["type"].integer == 1 else { throw LaundryError(message: "未确认这是洗衣机，本版只接入自助洗衣设备。") }
+        return info
+    }
+    static func handoffQRCode(_ text: String) throws -> String {
+        let s = text.trimmingCharacters(in: .whitespaces)
         guard (1...4096).contains(s.count), !s.contains(where: { $0.isNewline || $0.asciiValue == 0 }) else { throw LaundryError(message: "二维码内容无效。") }
-        // Send the original code to the official parser. Never navigate to arbitrary scanned websites.
+        // Ujing's legacy H5 also accepts a bare hexadecimal washer code.
+        if (16...256).contains(s.count), s.allSatisfy({ $0.isASCII && $0.isHexDigit }) { return s }
+        // Send QR URLs only to the fixed official parser, never navigate to the scanned host.
+        // The session enables handoff only after the API confirms a washer device.
+        guard let u = URLComponents(string: s), ["http", "https"].contains(u.scheme?.lowercased() ?? ""), let host = u.host, !host.isEmpty, u.user == nil, u.password == nil, u.port == nil || (u.scheme == "https" && u.port == 443) || (u.scheme == "http" && u.port == 80) else {
+            throw LaundryError(message: "请扫描洗衣机的完整二维码。")
+        }
+        let decoded = s.removingPercentEncoding ?? s
+        let credentialPattern = "(?i)[?&#](?:access_?token|authorization|captcha|mobile|phone|ticket|auth_code|token)="
+        guard decoded.range(of: credentialPattern, options: .regularExpression) == nil else { throw LaundryError(message: "这像是账号或登录链接，请扫描洗衣机二维码。") }
         return s
+    }
+    static func alipayMiniProgramURL(qrCode: String? = nil) throws -> URL {
+        var link = URLComponents(string: "alipays://platformapi/startapp")!
+        var items = [URLQueryItem(name: "appId", value: alipayAppID), URLQueryItem(name: "page", value: alipayHomePage)]
+        if let qrCode {
+            let original = try handoffQRCode(qrCode)
+            var nested = URLComponents()
+            nested.queryItems = [URLQueryItem(name: "qrcode", value: original)]
+            let query = nested.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+            items.append(URLQueryItem(name: "query", value: query))
+        }
+        link.queryItems = items
+        return link.url!
     }
     static func rows(_ data: JSON) throws -> [JSON] {
         if case .array(let rows) = data { return rows }
@@ -90,45 +135,8 @@ enum LaundryProtocol {
         guard let cents = Double(value.text) else { return "价格待确认" }
         return String(format: "¥%.2f", cents / 100)
     }
-    static func bluetoothRequired(_ data: JSON) -> Bool {
-        [1, 4, 5].contains(data["moduleType"].integer ?? -1) || data["needSyncBLE"].flag
-    }
-    static func networkControlSupported(_ data: JSON) -> Bool {
-        [0, 2, 3, 6, 7].contains(data["moduleType"].integer ?? -1) && !data["needSyncBLE"].flag
-    }
-    static func orderBody(device: JSON, program: JSON, extras: [String: JSON]) throws -> JSON {
-        guard !bluetoothRequired(device) else { throw LaundryError(message: "此机型需要专用蓝牙协议，本版暂不能启动，请使用官方 U净完成本次洗衣。") }
-        guard networkControlSupported(device) else { throw LaundryError(message: "尚未确认此机型的控制协议，已阻止下单。") }
-        guard device["type"].integer == 1 else { throw LaundryError(message: "本版只支持洗衣下单，烘干等设备请使用官方 U净。") }
-        guard device["notification"]["usageLimit"].integer != 1 else { throw LaundryError(message: "门店当前限制下单，请查看门店通知。") }
-        var fields: [String: JSON] = [:]
-        for key in ["type", "deviceTypeId", "deviceId", "storeId"] {
-            guard !device[key].text.isEmpty else { throw LaundryError(message: "设备资料不完整，请重新识别。") }
-            fields[key] = device[key]
-        }
-        guard !program["workModelId"].text.isEmpty else { throw LaundryError(message: "请选择洗衣程序。") }
-        fields["deviceWashModelId"] = program["workModelId"]
-        let groups = program["additionDevices"]["washingPartnerFeature"].list + program["additionParams"].list
-        let allowed = Set(groups.map { $0["key"].text }.filter { !$0.isEmpty })
-        for (key, id) in extras {
-            guard allowed.contains(key), groups.contains(where: { $0["key"].text == key && $0["options"].list.contains(where: { $0["id"] == id }) }) else { throw LaundryError(message: "附加项目已变化，请重新选择。") }
-            fields[key] = id
-        }
-        for key in ["isForceDetergent", "isForceDisinfectant"] where device[key].flag {
-            let requiredKey = key == "isForceDetergent" ? "wp_detergentGearId" : "wp_disinfectantGearId"
-            guard fields[requiredKey] != nil else { throw LaundryError(message: "门店要求选择洗衣液或除菌液，请先完成附加项目。") }
-        }
-        return .object(fields)
-    }
     static func status(_ raw: JSON) -> String {
         if !raw["statusName"].text.isEmpty { return raw["statusName"].text }
         return ["10": "已预约（待支付）", "20": "已支付", "21": "启动中", "22": "自洁启动中", "24": "正在投放洗衣液", "29": "退单保护", "30": "自洁中", "35": "自洁完成", "40": "运行中", "50": "订单完成", "51": "超时未支付", "52": "启动失败", "53": "订单已取消", "54": "超时未启动", "60": "故障中", "61": "故障中"][raw["status"].text] ?? "状态 \(raw["status"].text)"
-    }
-    static func paymentURL(_ value: String) -> URL? {
-        guard let u = URL(string: value), u.user == nil, u.password == nil else { return nil }
-        let host = u.host?.lowercased() ?? ""
-        if u.scheme == "https", ["alipay.com", "alipayobjects.com", "tenpay.com", "weixin.qq.com", "zhinengxiyifang.cn", "ujing.online"].contains(where: { host == $0 || host.hasSuffix("." + $0) }) { return u }
-        if ["alipays", "alipay", "weixin"].contains(u.scheme?.lowercased() ?? "") { return u }
-        return nil
     }
 }

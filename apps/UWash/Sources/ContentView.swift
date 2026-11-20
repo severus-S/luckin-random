@@ -5,50 +5,40 @@ let washTint = Color(red: 0.23, green: 0.22, blue: 0.69)
 struct ContentView: View {
     @StateObject private var session = LaundrySession()
     @State private var login = false
-    @State private var payment = false
+    @State private var handoff = false
     var body: some View {
         TabView {
-            NavigationStack { WashScreen(session: session, login: $login).navigationTitle("净洗") }.tabItem { Label("洗衣", systemImage: "washer") }
+            NavigationStack { WashScreen(session: session, login: $login, launch: { handoff = true }).navigationTitle("净洗") }.tabItem { Label("洗衣", systemImage: "washer") }
             NavigationStack { OrdersScreen(session: session, login: $login).navigationTitle("洗衣订单") }.tabItem { Label("订单", systemImage: "list.bullet.rectangle") }
             NavigationStack { account.navigationTitle("账号") }.tabItem { Label("账号", systemImage: "person.crop.circle") }
         }
         .tint(washTint)
         .safeAreaInset(edge: .bottom) {
-            if session.busy { HStack(spacing: 10) { ProgressView(); Text("正在处理，请稍候…").font(.callout) }.padding(12).frame(maxWidth: .infinity).background(.regularMaterial) }
+            if session.busy { HStack(spacing: 10) { ProgressView(); Text("正在读取…").font(.callout) }.padding(12).frame(maxWidth: .infinity).background(.regularMaterial) }
         }
         .alert("操作未完成", isPresented: Binding(get: { session.error != nil }, set: { if !$0 { session.error = nil } })) { Button("知道了", role: .cancel) {} } message: { Text(session.error ?? "") }
         .sheet(isPresented: $login) { LoginSheet(session: session) }
-        .sheet(isPresented: $payment) {
-            NavigationStack {
-                if let url = session.payURL {
-                    PaymentWeb(url: url, failure: { session.error = $0 })
-                        .navigationTitle("支付").navigationBarTitleDisplayMode(.inline)
-                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("返回订单") { payment = false; session.payURL = nil } } }
-                }
+        .confirmationDialog("前往 U净官方支付宝小程序？", isPresented: $handoff, titleVisibility: .visible) {
+            Button("去选择程序并使用") {
+                do { try session.openAlipay() }
+                catch { session.error = error.localizedDescription }
             }
-        }
-        .onChange(of: session.payURL) { _, url in
-            guard let url else { return }
-            if url.scheme == "https" { payment = true }
-            else { UIApplication.shared.open(url) { opened in if !opened { session.error = "未能打开支付 App。请先刷新订单并核对结果。" } }; session.payURL = nil }
-        }
+            Button("取消", role: .cancel) {}
+        } message: { Text("请在支付宝中核对设备、洗衣程序和金额，确认后再付款。若未自动带入机器，请在小程序内重新扫码。") }
     }
     private var account: some View {
         Form {
             Section("U净账号") {
                 LabeledContent("状态", value: session.loggedIn ? "会话已保存" : "未登录")
-                Button(session.loggedIn ? "重新登录" : "登录 U净") { login = true }.disabled(session.busy)
+                Button(session.loggedIn ? "重新网页登录 U净" : "网页登录 U净") { login = true }.disabled(session.busy)
                 if session.loggedIn { Button("退出并清除本机登录", role: .destructive) { session.logout() }.disabled(session.busy) }
+                Text("先完成官方网页登录，再扫码识别洗衣机。登录会话保存在本机钥匙串。").font(.callout).foregroundStyle(.secondary)
             }
             Section("关于净洗") {
-                Text("只保留自助洗衣入口：扫码识别、程序选择和洗衣订单。")
-                Text("基于 U净 2.4.15 APK 洗衣模块重建的个人测试客户端，与官方 U净无隶属关系。")
-                LabeledContent("版本", value: "0.1.0 (1)")
-                Text("蓝牙机型、官方支付 SDK 及完整真机流程仍待适配验证。").foregroundStyle(.secondary)
-            }
-            Section {
+                LabeledContent("版本", value: "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))")
+                Text("洗衣程序、洗护用品、下单、支付和设备操作由 U净官方支付宝小程序处理。净洗提供网页登录、扫码识别和订单读取。")
+                Text("首次使用请在支付宝中核对机器。若未自动带入，请用小程序内的扫一扫。").foregroundStyle(.secondary)
                 Link("U净隐私政策", destination: URL(string: "https://wx.zhinengxiyifang.cn/about_us/privacy_policy.html")!)
-                Link("官方洗衣入口", destination: URL(string: "https://wx.zhinengxiyifang.cn/")!)
             }
         }
     }
@@ -57,32 +47,42 @@ struct ContentView: View {
 struct WashScreen: View {
     @ObservedObject var session: LaundrySession
     @Binding var login: Bool
+    let launch: () -> Void
     @State private var scanner = false
     @State private var qr = ""
-    @State private var byID = false
     var body: some View {
         List {
             Section {
                 HStack(spacing: 18) {
                     Image(systemName: "washer.fill").font(.system(size: 45)).foregroundStyle(washTint).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 6) { Text("把时间留给自己").font(.title3.bold()); Text("扫码选机，安心洗衣").foregroundStyle(.secondary) }
+                    VStack(alignment: .leading, spacing: 6) { Text("扫一扫，开始洗衣").font(.title3.bold()); Text("选择程序和支付交给 U净小程序").foregroundStyle(.secondary) }
                 }.padding(.vertical, 16)
-                Button { session.loggedIn ? (scanner = true) : (login = true) } label: { Label(session.loggedIn ? "扫码洗衣" : "登录后扫码洗衣", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, minHeight: 44) }.buttonStyle(.borderedProminent).disabled(session.busy)
+                Button { session.loggedIn ? (scanner = true) : (login = true) } label: { Label("扫码识别洗衣机", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, minHeight: 44) }.buttonStyle(.borderedProminent).disabled(session.busy)
+                if !session.loggedIn { Button("网页登录 U净") { login = true }.frame(minHeight: 44) }
             }
-            Section("手动识别") {
-                Picker("输入内容", selection: $byID) { Text("二维码内容").tag(false); Text("设备 ID").tag(true) }.pickerStyle(.segmented)
-                TextField(byID ? "服务端设备 ID（非机身编号）" : "粘贴洗衣机二维码链接", text: $qr, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled().lineLimit(2...4).accessibilityLabel(byID ? "设备 ID" : "二维码内容")
-                Button("识别设备", action: identify).disabled(session.busy || qr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Section("粘贴设备二维码") {
+                TextField("洗衣机二维码的完整内容", text: $qr, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled().lineLimit(2...4).accessibilityLabel("洗衣机二维码内容").disabled(session.busy)
+                Button("识别设备", action: identify).disabled(session.busy || qr.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            if !session.note.isEmpty { Section { Label(session.note, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).textSelection(.enabled) } }
-            if !session.device["deviceId"].text.isEmpty { DevicePanel(session: session).id(session.device["deviceId"].text) }
-            if !session.order["orderId"].text.isEmpty { OrderPanel(session: session) }
+            if !session.device.fields.isEmpty {
+                Section("已识别的洗衣机") {
+                    LabeledContent("设备", value: session.device.firstText("deviceName", "deviceNo", "deviceId"))
+                    if !session.device["storeName"].text.isEmpty { LabeledContent("门店", value: session.device["storeName"].text) }
+                    Text("已确认是洗衣机设备").foregroundStyle(.secondary)
+                    Button("去支付宝选择程序并使用", action: launch).frame(maxWidth: .infinity, minHeight: 44).buttonStyle(.borderedProminent).disabled(session.busy)
+                }
+            }
+            if !session.note.isEmpty { Section { Label(session.note, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary) } }
+            Section {
+                Text("洗衣程序、付款和设备启动在 U净官方支付宝小程序内完成。返回后可在订单页刷新结果。").font(.callout).foregroundStyle(.secondary)
+            }
         }
+        .onChange(of: qr) { _, value in if value.trimmingCharacters(in: .whitespaces) != session.deviceQRCode { session.clearDevice() } }
         .sheet(isPresented: $scanner) {
             NavigationStack {
-                QRScanner(result: { value in qr = value; byID = false; scanner = false; identify() }, failure: { message in scanner = false; session.error = message })
+                QRScanner(result: { value in qr = value; scanner = false; identify() }, failure: { scanner = false; session.error = $0 })
                     .ignoresSafeArea(edges: .bottom)
-                    .overlay(alignment: .bottom) { Text("对准洗衣机上的二维码").font(.headline).padding().background(.ultraThinMaterial, in: Capsule()).padding(.bottom, 40) }
+                    .overlay(alignment: .bottom) { Text("对准 U净洗衣机二维码").font(.headline).padding().background(.ultraThinMaterial, in: Capsule()).padding(.bottom, 40) }
                     .navigationTitle("扫码洗衣").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { scanner = false } } }
             }
@@ -90,123 +90,8 @@ struct WashScreen: View {
     }
     private func identify() {
         guard session.loggedIn else { login = true; return }
-        session.perform { try await session.identify(qr, isDeviceID: byID) }
+        session.perform { try await session.identify(qr) }
     }
-}
-
-struct DevicePanel: View {
-    @ObservedObject var session: LaundrySession
-    @State private var selected = ""
-    @State private var extras: [String: JSON] = [:]
-    @State private var confirm = false
-    private var program: JSON { session.programs.first { $0["workModelId"].text == selected } ?? .null }
-    private var groups: [JSON] { program["additionDevices"]["washingPartnerFeature"].list + program["additionParams"].list }
-    private var bluetooth: Bool { LaundryProtocol.bluetoothRequired(session.device) || LaundryProtocol.bluetoothRequired(session.scan) }
-    var body: some View {
-        Group {
-            Section("已识别的洗衣机") {
-                LabeledContent("设备", value: session.device.firstText("deviceNo", "deviceId"))
-                LabeledContent("门店", value: session.device["storeName"].text)
-                LabeledContent("机型", value: session.device["deviceTypeName"].text)
-                if !session.device["warmTip"].text.isEmpty { Text(session.device["warmTip"].text).foregroundStyle(.secondary) }
-                if !session.device["notification"]["content"].text.isEmpty { Text(session.device["notification"]["content"].text) }
-                if bluetooth { Label("此设备需专用蓝牙控制，本版暂不支持下单和启动。", systemImage: "exclamationmark.circle").foregroundStyle(.orange) }
-            }
-            Section("选择洗衣程序") {
-                ForEach(Array(session.programs.enumerated()), id: \.offset) { _, p in
-                    Button { selected = p["workModelId"].text } label: {
-                        HStack {
-                            Image(systemName: selected == p["workModelId"].text ? "checkmark.circle.fill" : "circle").accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(p.firstText("workModelName", "name"))
-                                if !p["time"].text.isEmpty { Text("约 \(p["time"].text) 分钟").font(.caption).foregroundStyle(.secondary) }
-                            }
-                            Spacer(); Text(price(p)).monospacedDigit()
-                        }.frame(minHeight: 44).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityAddTraits(selected == p["workModelId"].text ? .isSelected : [])
-                }
-            }
-            ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                Section(group.firstText("name", "title", "key")) {
-                    let key = group["key"].text
-                    Picker("附加项目", selection: Binding(get: { extras[key]?.text ?? "" }, set: { newValue in extras[key] = group["options"].list.first { $0["id"].text == newValue }?["id"] })) {
-                        Text("不选择").tag("")
-                        ForEach(Array(group["options"].list.enumerated()), id: \.offset) { _, option in
-                            Text("\(option.firstText("name", "gearName", "title")) · \(LaundryProtocol.money(option["isPromotion"].flag ? option["promotionPrice"] : option["price"]))").tag(option["id"].text)
-                        }
-                    }
-                }
-            }
-            Section {
-                Button("创建洗衣订单") { confirm = true }.frame(maxWidth: .infinity, minHeight: 44).buttonStyle(.borderedProminent)
-                    .disabled(session.busy || selected.isEmpty || bluetooth || !LaundryProtocol.networkControlSupported(session.device) || session.device["type"].integer != 1 || session.device["notification"]["usageLimit"].integer == 1)
-            } footer: { Text("下单前请核对设备、程序和附加项目。最终金额由 U净服务端计算。") }
-        }
-        .onChange(of: selected) { _, _ in extras = [:] }
-        .confirmationDialog("确认创建洗衣订单？", isPresented: $confirm, titleVisibility: .visible) {
-            Button("创建订单并核对付款") { session.perform { try await session.create(program: program, extras: extras) } }
-            Button("取消", role: .cancel) {}
-        } message: { Text("\(program.firstText("workModelName", "name")) · \(price(program))，附加项目以服务器最终账单为准。") }
-    }
-    private func price(_ p: JSON) -> String { LaundryProtocol.money(p["isPromotion"].flag ? p["promotionPrice"] : p["basePrice"]) }
-}
-
-struct OrderPanel: View {
-    @ObservedObject var session: LaundrySession
-    @State private var confirmCancel = false
-    @State private var command = ""
-    @State private var confirmControl = false
-    @State private var confirmPay = false
-    @State private var payMethod: JSON = .null
-    @State private var useBalance = false
-    private var order: JSON { session.order }
-    var body: some View {
-        Group {
-            Section("订单详情") {
-                LabeledContent("订单", value: order["orderId"].text).textSelection(.enabled)
-                LabeledContent("状态", value: LaundryProtocol.status(order))
-                if !order["deviceNo"].text.isEmpty { LabeledContent("设备", value: order["deviceNo"].text) }
-                if !order["storeName"].text.isEmpty { LabeledContent("门店", value: order["storeName"].text) }
-                if !order["workModelName"].text.isEmpty { LabeledContent("程序", value: order["workModelName"].text) }
-                if !order["price"].text.isEmpty { LabeledContent("订单金额", value: LaundryProtocol.money(order["price"])) }
-                if !order["remainingTime"].text.isEmpty { LabeledContent("剩余时间", value: order["remainingTime"].text) }
-                Button("刷新此订单") { session.perform { try await session.loadOrder(order["orderId"].text) } }.disabled(session.busy)
-                if !session.note.isEmpty { Label(session.note, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary) }
-            }
-            if order["status"].text == "10" {
-                Section {
-                    Button("查询可用支付方式") { session.perform { try await session.loadPaymentMethods() } }.disabled(session.busy)
-                    if !session.paymentMethods.isEmpty {
-                        Toggle("使用 U净余额红包抵扣", isOn: $useBalance)
-                        ForEach(Array(session.paymentMethods.enumerated()), id: \.offset) { _, method in Button(method.firstText("name", "channel")) { payMethod = method; confirmPay = true }.disabled(session.busy) }
-                    }
-                    Button("取消订单", role: .destructive) { confirmCancel = true }.disabled(session.busy)
-                } header: { Text("付款") } footer: { Text("仅显示本版能处理的网页支付渠道；官方 App SDK 支付尚未接入。") }
-            }
-            if LaundryProtocol.bluetoothRequired(order) {
-                Section { Text("这台设备需要专用蓝牙协议，请在官方 U净完成启动。") }
-            } else if LaundryProtocol.networkControlSupported(order), ["20", "35", "40"].contains(order["status"].text) {
-                Section {
-                    if ["20", "35"].contains(order["status"].text) { controlButton("start") }
-                    if order["status"].text == "40" { controlButton("stop") }
-                } header: { Text("控制设备") } footer: { Text("指令受理后请观察机器实际状态。") }
-            }
-        }
-        .confirmationDialog("确认取消此订单？", isPresented: $confirmCancel, titleVisibility: .visible) {
-            Button("取消订单", role: .destructive) { session.perform { try await session.cancelOrder() } }
-            Button("返回", role: .cancel) {}
-        } message: { Text("退款与取消结果以 U净服务端为准。") }
-        .confirmationDialog("确认发送机器指令？", isPresented: $confirmControl, titleVisibility: .visible) {
-            Button(commandName) { session.perform { try await session.control(command) } }
-            Button("取消", role: .cancel) {}
-        } message: { Text("请确认衣物已放好、机门已关，并核对设备编号 \(order["deviceNo"].text)。") }
-        .confirmationDialog("确认发起支付？", isPresented: $confirmPay, titleVisibility: .visible) {
-            Button("前往支付") { session.perform { try await session.pay(channel: payMethod, useBalance: useBalance) } }
-            Button("取消", role: .cancel) {}
-        } message: { Text("订单 \(order["orderId"].text)。请核对账单，金额以支付页为准。返回后刷新订单确认结果。") }
-    }
-    private var commandName: String { command == "stop" ? "停止洗衣" : "启动洗衣" }
-    private func controlButton(_ value: String) -> some View { Button(value == "stop" ? "停止洗衣" : "启动洗衣", role: value == "stop" ? .destructive : nil) { command = value; confirmControl = true }.disabled(session.busy) }
 }
 
 struct OrdersScreen: View {
@@ -214,11 +99,11 @@ struct OrdersScreen: View {
     @Binding var login: Bool
     var body: some View {
         List {
-            if !session.loggedIn { Section { Button("登录后查看洗衣订单") { login = true } } }
+            if !session.loggedIn { Section { Button("网页登录 U净读取订单") { login = true } } }
             else {
                 Section { Button("刷新订单") { session.perform { try await session.loadOrders(page: session.historyPage) } }.disabled(session.busy) }
                 if !session.ordersError.isEmpty { Section { Text(session.ordersError).foregroundStyle(.orange) } }
-                if !session.ordersLoaded { Section { Text("点刷新读取 U净洗衣订单。").foregroundStyle(.secondary) } }
+                if !session.ordersLoaded { Section { Text("点刷新读取 U净订单。").foregroundStyle(.secondary) } }
                 else {
                     Section("进行中") { if session.running.isEmpty { Text("暂无进行中的订单").foregroundStyle(.secondary) }; rows(session.running) }
                     Section("历史订单 · 第 \(session.historyPage) 页") { if session.history.isEmpty { Text("本页暂无订单").foregroundStyle(.secondary) }; rows(session.history) }
@@ -226,7 +111,16 @@ struct OrdersScreen: View {
                         HStack { Button("上一页") { session.perform { try await session.loadOrders(page: max(1, session.historyPage - 1)) } }.disabled(session.busy || session.historyPage == 1); Spacer(); Button("下一页") { session.perform { try await session.loadOrders(page: session.historyPage + 1) } }.disabled(session.busy || session.history.count < 20) }
                     }
                 }
-                if !session.order["orderId"].text.isEmpty { OrderPanel(session: session) }
+                if !session.order["orderId"].text.isEmpty {
+                    Section("订单快照") {
+                        LabeledContent("订单", value: session.order["orderId"].text).textSelection(.enabled)
+                        LabeledContent("状态", value: LaundryProtocol.status(session.order))
+                        LabeledContent("设备", value: session.order["deviceNo"].text)
+                        LabeledContent("门店", value: session.order["storeName"].text)
+                        if !session.order["price"].text.isEmpty { LabeledContent("订单金额", value: LaundryProtocol.money(session.order["price"])) }
+                        Button("刷新此订单") { session.perform { try await session.loadOrder(session.order["orderId"].text) } }.disabled(session.busy)
+                    }
+                }
             }
         }
     }
@@ -246,52 +140,34 @@ struct OrdersScreen: View {
 struct LoginSheet: View {
     @ObservedObject var session: LaundrySession
     @StateObject private var browser = LoginBrowser()
-    @State private var mobile = ""
-    @State private var code = ""
     @State private var accepting = false
     @State private var failure = ""
-    @State private var sent = false
-    @State private var nextCodeDate = Date.distantPast
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text("登录后即可识别洗衣机、选择程序和查看订单。").foregroundStyle(.secondary)
-                    TextField("手机号", text: $mobile).keyboardType(.phonePad).textContentType(.telephoneNumber).accessibilityLabel("手机号")
-                    TextField("短信验证码", text: $code).keyboardType(.numberPad).textContentType(.oneTimeCode).accessibilityLabel("短信验证码")
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        let remaining = max(0, Int(ceil(nextCodeDate.timeIntervalSince(context.date))))
-                        Button(remaining > 0 ? "\(remaining) 秒后可重发" : "获取验证码") {
-                            accepting = true; failure = ""
-                            Task {
-                                defer { accepting = false }
-                                do { try await browser.sendCode(mobile: mobile); sent = true; nextCodeDate = Date().addingTimeInterval(60) }
-                                catch { failure = "验证码请求失败，请稍后重试。" }
-                            }
-                        }.disabled(accepting || !browser.ready || remaining > 0 || mobile.count != 11)
-                    }
-                    if sent { Text("验证码已发送，请查看手机短信。").foregroundStyle(.secondary) }
-                } header: { Text("U净账号") } footer: { Text("验证码仅由你点击后发送。登录会话保存在本机钥匙串。") }
-                Section {
-                    Button("登录") {
+            VStack(spacing: 0) {
+                Text("请在 U净官方网页完成登录，再点右上角“完成登录”。").font(.callout).foregroundStyle(.secondary).padding()
+                if browser.loading { ProgressView("正在加载官方登录页…").padding() }
+                LoginWeb(browser: browser)
+                if !failure.isEmpty { Text(failure).foregroundStyle(.red).font(.callout).padding() }
+                if !browser.error.isEmpty { Text(browser.error).foregroundStyle(.orange).font(.callout).padding() }
+                if accepting { ProgressView("正在验证登录…").padding() }
+                Button("重新加载官方登录页") { browser.reload() }.disabled(accepting).padding()
+            }
+            .navigationTitle("网页登录 U净").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(accepting) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成登录") {
                         accepting = true; failure = ""
                         Task {
                             defer { accepting = false }
-                            do { try await session.login(mobile: mobile, code: code); code = ""; dismiss() }
+                            do { let token = try await browser.readToken(); try await session.acceptAccessToken(token); dismiss() }
                             catch { failure = error.localizedDescription }
                         }
-                    }.frame(maxWidth: .infinity, minHeight: 44).buttonStyle(.borderedProminent).disabled(accepting || mobile.count != 11 || code.isEmpty)
-                    if accepting { ProgressView("正在处理…") }
-                    if !failure.isEmpty { Text(failure).foregroundStyle(.red) }
-                    if !browser.error.isEmpty { Text(browser.error).foregroundStyle(.red) }
-                    if !browser.ready { Button("重新加载验证码组件") { browser.error = ""; browser.view.reload() }.disabled(accepting) }
+                    }.disabled(accepting || !browser.ready)
                 }
-                Section { Link("U净隐私政策", destination: URL(string: "https://wx.zhinengxiyifang.cn/about_us/privacy_policy.html")!) }
             }
-            .background { LoginWeb(browser: browser).frame(width: 1, height: 1).opacity(0.001).accessibilityHidden(true) }
-            .navigationTitle("登录 U净").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(accepting) } }
             .interactiveDismissDisabled(accepting)
         }
     }

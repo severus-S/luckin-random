@@ -2,8 +2,8 @@
   "name": "UWash",
   "bundleId": "com.sjx13.ios.uwash",
   "displayName": "净洗",
-  "version": "0.1.0",
-  "buildNumber": 1,
+  "version": "0.2.0",
+  "buildNumber": 2,
   "deploymentTarget": "17.0",
   "testPackage": true,
   "cameraUsageDescription": "扫描洗衣机二维码，识别你要使用的自助洗衣设备。"

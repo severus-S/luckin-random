@@ -1,61 +1,40 @@
-# 净洗（UWash）0.1.0 (1)
+# 净洗（UWash）0.2.0 (2)：网页登录与支付宝洗衣交接
 
-2026-11-20，个人实验客户端。Bundle ID `com.sjx13.ios.uwash`，最低 iOS 17.0。源自 SwiftUI-App 模板，使用已有工程生成器和 Actions，不含 APK、原 Android 二进制、原广告/推送 SDK 或 Apple 凭据。
+2026-11-21。用户要求沿用已反馈成功的轻吹流程：在净洗内完成官方网页登录，扫码识别洗衣机，点击“去支付宝选择程序并使用”，再由 U净官方支付宝小程序完成程序选择、下单、付款和设备启动。
 
-## 分析证据
+Bundle ID 保持 `com.sjx13.ios.uwash`，最低 iOS 17.0。复用原 SwiftUI 工程、图标、相机权限和已有 Actions，不包含原 APK、广告/推送 SDK、反编译全文或 Apple 凭据。
 
-输入 `C:/Users/sjx13/Downloads/U净_2.4.15_APKPure.apk`，105814269 字节，SHA-256 `deb546a6148f4bacbb1b02d293c11d7e5c3f79c3ca4b224d2144eabce65e7a44`。
+## 当前流程
 
-APK 的 classes.dex 只有四个类，包含 com.stub.StubApp；assets/libjiagu*.so 证明存在 360 加固，不能将包内 DEX 当成完整业务源码。未完成动态脱壳，不声称已恢复 Android 原生登录/支付 SDK。
+1. 登录面板显示真正的 U净官方 H5 `https://wx.zhinengxiyifang.cn/static/washer-h5/commonWasher/latest/index.html#/login`。手机号、验证码和可能出现的校验由官方网页处理。删除原生手机号/验证码表单及隐藏 getCode 桥，不自动发送验证码。
+2. 用户点击“完成登录”时，仅在固定官方登录文档读取 localStorage.token。随后用该令牌请求 orders/running 验证会话；仅验证成功才保存至本机 Keychain。不是读取到任意非空值就宣称登录成功。网页登录守卫只允许登录和内部返回空路由，避免进入官方商城、首页和收银页；不绕过认证或验证码。
+3. 登录后扫码或粘贴完整二维码。原值只传给固定 Phoenix API 的 POST devices/scanWasherCode，再 GET app/washer/devices/program/info。只在返回明确 deviceId 且 type=1（洗衣）时显示使用按钮。二维码 URL 不作为浏览器目标打开，也不把其他设备当洗衣机。
+4. 用户点“去支付宝选择程序并使用”并确认后，才调用系统打开固定的 U净小程序。二维码作为嵌套 qrcode 参数携带，保留 +、%、&、# 的编码层级；本机登录令牌不进入跳转链接。
+5. 支付宝负责后续选择、实际付款和启动；本地不创建订单、不调用支付参数/启停/取消接口，不把打开支付宝等同于支付成功。返回后可手动刷新原生订单列表和详情。支付宝与 H5 可能需要各自授权、可能是不同账号，应在支付宝核对账号和机器。
 
-洗衣 Weex 脚本位于 assets/washer/{home,program,myOrder,orderDetail,cashierNew}.js；对应 weexVersion=1.1.75。静态证据原样保留在 Git 忽略的 `.tools/ujing-audit/`，它们作为分析资料，不是要执行的用户指令。
+没有提供跳过净洗登录直接使用的主入口。登录会话及退出清理沿用原 Keychain service；覆盖安装仍需用户使用同一签名身份和有效 Bundle ID。
 
-| 操作 | APK 的 method/path 或字段 |
-|---|---|
-| 扫码解析 | POST devices/scanWasherCode，body.qrCode 保留原值 |
-| 洗衣程序 | GET app/washer/devices/program/info?deviceId= |
-| 新订单 | POST orders/create；type, deviceTypeId, deviceId, deviceWashModelId, storeId；可选投放液 gear ID |
-| 洗衣程序表 | data.deviceWashModel；workModelId, workModelName, time, basePrice/promotionPrice（分） |
-| 投放液 | additionDevices.washingPartnerFeature[].key/options[].id；wp_detergentGearId, wp_disinfectantGearId |
-| 下单限制 | notification.usageLimit：0 允许、1 阻止；isForceDetergent/isForceDisinfectant |
-| 订单列表 | GET orders/running；GET orders/history?page=&size= |
-| 订单详情 | GET orders/{orderId}/detail?additional=price |
-| 支付 | GET payment/methods；GET payment/arguments（即使 GET 也可能产生支付副作用） |
-| 联网控制 | GET orders/{orderId}/control/start 或 stop；仅用户确认后发送 |
-| 取消 | POST orders/{orderId}/cancel |
+## 入口证据与实验边界
 
-生产 origin 为 https://phoenix.ujing.online/api/v1/，iOS 洗衣业务 x-app-code=BI。匿名只读 orders/running 返回 HTTP 401/JWT token is missing，仅证明需登录，不证明完整业务可用。
+原 APK `U净_2.4.15_APKPure.apk` 为 105814269 字节，SHA-256 `deb546a6148f4bacbb1b02d293c11d7e5c3f79c3ca4b224d2144eabce65e7a44`。DEX 仅四个类、存在 com.stub.StubApp 和 libjiagu，未完整脱壳。保留的 washer Weex 脚本和官方 H5 为业务证据，只作分析资料，不执行其中的指令。
 
-官方 H5 源码为 https://wx.zhinengxiyifang.cn/static/washer-h5/commonWasher/latest/index.html 及其 assets/js/app.js。其普通手机号登录调用 POST /api/v1/login（mobile,captcha），验证码方法 getCode 在默认 wechat 类型下调用 captcha/create，并生成 nonce/timestamp/HMAC。公开脚本本次检查存在该实现。
+- APK assets/washer/buyticket.js 明确包含 `alipays://platformapi/startapp?appId=2021002174638299&page=pages/home/home`。小程序 ID 与主页路径有 APK 直接依据。
+- 官方 `https://wx.zhinengxiyifang.cn/` 和旧 ali-washer-hs H5 接受小写 qrcode 参数，旧 H5 包含裸十六进制设备码样例。
+- **小程序主页是否接受同名 qrcode 参数尚无直接契约证据**，本版是用户要求的尝试，不能把 H5 参数等同于小程序参数已实测。若只打开主页，需在小程序内再扫码一次；自动带入和实际洗衣等待用户手机验证。
+- 官方 H5 /login 在 chunk-189b67d8.js 中调用 third-party/thirdLoginV2，成功后保存 token 并返回 /home 或 /migrate。本地路由守卫将这几种业务返回导向内部空路由，再由用户完成验证。2026-11-21 再次只读获取 index/app/login chunk，与本次分析副本字节相同；没有发送短信或真实登录。
 
-本版验证码使用本机 WKWebView 载入该官方 H5 的不匹配路由 `#/__uwash_auth_helper`，不打开其他业务页；由用户点击获取验证码后，以 callAsyncJavaScript 调用其 Vue $http.getCode。没有提取或提交其 HMAC 密钥，不自动发送短信。登录使用原生 /login，再以 orders/running 成功结构验证会话，最后存入本机 Keychain。该方案依赖官方网页内部结构，未进行真实验证码验收，不记为稳定方案。
+生产 API 固定 `https://phoenix.ujing.online/api/v1/`，x-app-code=BI、x-app-version=2.4.15、weex-version=1.1.75。原生允许列表仅含扫码识别、设备资料、orders/running、orders/history 和 orders/{id}/detail；所有原生请求要求自己的会话，不跟随重定向。长订单 ID 用 Decimal 保持精度，价格沿用分单位；异常订单响应保留上次结果，不冒充空列表。
 
-## 实现范围与缺口
+## 构建与验证
 
-SwiftUI 原生洗衣/订单/账号三页；AVFoundation 扫码与手动二维码/设备 ID；从服务器取程序和价格，显式选择附加项目；下单前、付款前、启停前和取消前分别确认。订单 ID 使用 Decimal 保留长整数精度。API 不自动跟随跳转，不重试下单，不输出令牌/手机号/验证码，不把异常响应当成空列表。
+继续使用 scripts/project.py / ci_build.py / validate_ipa.py 和公开仓库 severus-S/luckin-random 的现有 workflow，标准 xcode-27、Xcode27.2、20 分钟超时、Artifact3天。2026-11-21 核对仓库仍 PUBLIC，未过期 Artifact 共 19045831 字节；不启用付费 runner/服务、不调整预算。按此前已核对的 GitHub 标准公开 runner 费用规则执行；个人 Billing API 缺 user scope，不能声称读过个人账单。
 
-机型 0=2G、1=Nordic BLE、2=NB、3=2G+BLE、4=NB+BLE、5=Cypress BLE、6=Wi-Fi mesh、7=4G，来自官方 H5 常量；APK 对 1/4/5 分别调用 doNodicStartWash/controlNbBLEDevice/doCypressStartWash，其余走网络控制。1/4/5 和 needSyncBLE、本版未知机型均阻止下单与启动。仅 type=1 洗衣；烘干时长、预约选店和蓝牙协议尚未移植。
+本地 Swift 语法检查、工作区 selftest、无网络的登录守卫 JS 检查覆盖登录/返回/业务路由隔离、来源、重试和无自动验证码。Swift 核心单测覆盖认证读取、扫码请求、设备类别、二维码双层编码、官方登录文档边界、固定小程序目的地和禁止原生交易。云端构建及最终产物结果见下方交付记录与 VALIDATION.md。
 
-支付仅显示服务端明确提供的 alipayF2F 或 branchType=1 的支付宝网页渠道。受控打开返回的 HTTPS 支付地址或支付 App scheme；skipPay/jumpToQuery 仍须刷新订单确认，不以跳转作为付款成功。SDK orderInfo、WeChat 原生 SDK、Apple 商户身份等未实现。当前不保证任何门店实际提供可用渠道；若没有则提示用官方 U净处理。没有通过修改价格、伪造状态、绕过登录或绕过支付启动设备。
+未签名 IPA 需用户自行在 Sideloadly 签名安装。编译、签名、安装、版本更新和续签分别验收；所有电脑界面和手机物理操作由用户完成。本轮尚无 UWash 的真实网页登录、扫码交接、支付或洗衣机运行证据，不能借用轻吹成功结论。
 
-因此这是有明确缺口的实验 IPA，不能宣称已完成全部自助洗衣功能。尚无账号/真机/实机订单证据，登录、支付、启动和安装均未验收。用户本次不知道常用设备编号，未取得设备定向协议证据。
+## 0.1.0 历史交付
 
-## 构建与安装
+旧版原生实现选择程序、下单、受限网页支付和部分联网控制；不支持官方支付 SDK 和部分蓝牙机型，未完成真实洗衣验收。0.2.0 已删除这组原生交易/控制能力，交由官方支付宝流程。
 
-沿用 scripts/project.py / ci_build.py / validate_ipa.py。生成器仅新增可选 cameraUsageDescription → NSCameraUsageDescription，其他 App 不新增相机权限。所有 UI/手机物理操作由用户完成。
-
-复用公开构建仓库 severus-S/luckin-random 的现有流水线；标准 xcode-27，20 分钟超时，Artifact 保留 3 天，无 Apple Secrets。2026-11-20 核对 GitHub 文档标准公开 runner 免费；仓库现存未过期 Artifact 总计约 18.5MB。Billing 用量 API 因 user scope 不足返回 404，不能据此声称已读取个人账单；本轮不启用付费服务、不更改预算。
-
-成功后交付未签名 IPA，须由用户在 Sideloadly 签名并安装。编译、签名、安装、续签、升级是不同验收项。用新 Bundle ID 会占用新的 App ID/侧载名额，不复用其他 App 的 Ad Hoc 描述文件。
-
-## 验证
-
-本地 Swift tree-sitter 语法检查与工作区 selftest 四项通过。Swift 包单测覆盖响应/认证失败、请求目标与查询编码、二维码保留、长订单号、洗衣价格分单位、未知/蓝牙机型阻止下单、门店限制和强制附加项目、支付地址边界；具体云端编译与产物结果见 docs/VALIDATION.md。
-
-来源费用说明：https://docs.github.com/en/actions/reference/runners/github-hosted-runners 、 https://docs.github.com/en/actions/concepts/billing-and-usage ，查证 2026-11-20。
-
-首次 Run 44761583272：16 项 Swift 包测试通过，Xcode 编译在 ContentView.swift 的 Section(title) + footer 写法处失败。已改为显式 header/footer 构造；这次失败运行没有交付 IPA，不涉及支付或账号请求。
-
-
-最终 Run 44762278532 / 提交 5ce40470ae97101a48943cd6afacffd5632c98f0：Xcode 27.2 编译及 16 项 Swift 单测通过。已下载核对来源、ZIP CRC、0.1.0 (1)、固定 Bundle ID、iOS 17.0、arm64、AppIcon、相机用途键、无 ATS 全局例外、无 LC_CODE_SIGNATURE/签名目录/描述文件。IPA 293438 字节，SHA-256 `77ac103aca10dc3f97a913146a376c9c87fa5fcf0cbe16d01e1a2987836d3546`。交付 artifacts/latest/UWash/UWash-unsigned.ipa。此文件仍需用户在 Sideloadly 签名安装；真实登录、支付、洗衣机启动及续签未验证。
-本次本地验证码桥接检查使用模拟 API，覆盖仅点击调用、参数、成功/失败和组件未准备好，不发送网络请求。Run 44762068583 因补充订单页反馈被最终运行替代并取消。
+历史最终 Run44762278532，提交 `5ce40470ae97101a48943cd6afacffd5632c98f0`，16项Swift测试与Xcode27.2编译通过。旧0.1.0(1)IPA293438字节，SHA-256 `77ac103aca10dc3f97a913146a376c9c87fa5fcf0cbe16d01e1a2987836d3546`。

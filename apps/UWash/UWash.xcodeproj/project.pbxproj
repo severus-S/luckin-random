@@ -21,7 +21,7 @@
         INFOPLIST_KEY_UILaunchScreen_Generation = YES;
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
         INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-        MARKETING_VERSION = 0.1.0; CURRENT_PROJECT_VERSION = 1;
+        MARKETING_VERSION = 0.2.0; CURRENT_PROJECT_VERSION = 2;
         ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         INFOPLIST_FILE = "GeneratedInfo.plist";}; name = Release; };
 000000000000000000000064 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/App.swift"; sourceTree = "<group>"; };
@@ -34,7 +34,7 @@
 00000000000000000000006B = {isa = PBXBuildFile; fileRef = 00000000000000000000006A; };
 00000000000000000000006C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/LaundrySession.swift"; sourceTree = "<group>"; };
 00000000000000000000006D = {isa = PBXBuildFile; fileRef = 00000000000000000000006C; };
-00000000000000000000006E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/PaymentWeb.swift"; sourceTree = "<group>"; };
+00000000000000000000006E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/LoginWeb.swift"; sourceTree = "<group>"; };
 00000000000000000000006F = {isa = PBXBuildFile; fileRef = 00000000000000000000006E; };
 000000000000000000000070 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/QRScanner.swift"; sourceTree = "<group>"; };
 000000000000000000000071 = {isa = PBXBuildFile; fileRef = 000000000000000000000070; };
