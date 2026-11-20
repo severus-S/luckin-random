@@ -38,3 +38,9 @@ Bundle ID 保持 `com.sjx13.ios.uwash`，最低 iOS 17.0。复用原 SwiftUI 工
 旧版原生实现选择程序、下单、受限网页支付和部分联网控制；不支持官方支付 SDK 和部分蓝牙机型，未完成真实洗衣验收。0.2.0 已删除这组原生交易/控制能力，交由官方支付宝流程。
 
 历史最终 Run44762278532，提交 `5ce40470ae97101a48943cd6afacffd5632c98f0`，16项Swift测试与Xcode27.2编译通过。旧0.1.0(1)IPA293438字节，SHA-256 `77ac103aca10dc3f97a913146a376c9c87fa5fcf0cbe16d01e1a2987836d3546`。
+
+## 0.2.0 交付结果
+
+最终 Run44772196096 / attempt2，源码提交 `a0b8591169316b64de8721b3bc4b4d59a99dd2ab`：Xcode27.2编译和22项Swift核心测试全部通过；本地9个Swift文件语法、4项工作区selftest和登录守卫离线JS检查通过。已下载核对 manifest 来源、ZIP CRC、0.2.0(2)、com.sjx13.ios.uwash、iOS17.0、arm64、AppIcon和相机用途键；无ATS全局例外、LC_CODE_SIGNATURE、签名目录或描述文件。IPA 214582字节，SHA-256 `287888d7f76d3c55b37d424b22958242e11355188df918c2609f914d76b23c45`。交付 `artifacts/latest/UWash/UWash-unsigned.ipa`，旧0.1.0归档至 `artifacts/archive/UWash/0.1.0-1/`。
+
+首次attempt1同样编译及22项测试通过，但本机直连/代理下载Actions存储站失败；因此对同一源码重跑产物上传，最终通过GitHub连接器取得attempt2 ZIP，并在本地校验。没有改变工作流、构建脚本或系统代理配置。两次构建不是洗衣真机验收；网页登录、支付宝设备自动带入、实际洗衣及本次版本签名安装/续签仍待用户验证。
