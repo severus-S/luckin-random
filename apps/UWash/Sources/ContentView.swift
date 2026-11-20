@@ -171,6 +171,7 @@ struct OrderPanel: View {
                 if !order["price"].text.isEmpty { LabeledContent("订单金额", value: LaundryProtocol.money(order["price"])) }
                 if !order["remainingTime"].text.isEmpty { LabeledContent("剩余时间", value: order["remainingTime"].text) }
                 Button("刷新此订单") { session.perform { try await session.loadOrder(order["orderId"].text) } }.disabled(session.busy)
+                if !session.note.isEmpty { Label(session.note, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary) }
             }
             if order["status"].text == "10" {
                 Section {
