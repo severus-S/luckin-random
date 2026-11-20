@@ -55,8 +55,8 @@ final class HairAPI: NSObject, URLSessionTaskDelegate {
         Task {
             defer { busy = false }
             do { try await work() }
-            catch let e as HairError { error = e.message }
-            catch { error = "操作未完成，请重试。" }
+            catch let e as HairError { self.error = e.message }
+            catch { self.error = "操作未完成，请重试。" }
         }
     }
     func accept(_ access: String) async throws {
