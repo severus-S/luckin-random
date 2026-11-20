@@ -55,3 +55,7 @@ SwiftUI 原生洗衣/订单/账号三页；AVFoundation 扫码与手动二维码
 来源费用说明：https://docs.github.com/en/actions/reference/runners/github-hosted-runners 、 https://docs.github.com/en/actions/concepts/billing-and-usage ，查证 2026-11-20。
 
 首次 Run 44761583272：16 项 Swift 包测试通过，Xcode 编译在 ContentView.swift 的 Section(title) + footer 写法处失败。已改为显式 header/footer 构造；这次失败运行没有交付 IPA，不涉及支付或账号请求。
+
+
+最终 Run 44762278532 / 提交 5ce40470ae97101a48943cd6afacffd5632c98f0：Xcode 27.2 编译及 16 项 Swift 单测通过。已下载核对来源、ZIP CRC、0.1.0 (1)、固定 Bundle ID、iOS 17.0、arm64、AppIcon、相机用途键、无 ATS 全局例外、无 LC_CODE_SIGNATURE/签名目录/描述文件。IPA 293438 字节，SHA-256 `77ac103aca10dc3f97a913146a376c9c87fa5fcf0cbe16d01e1a2987836d3546`。交付 artifacts/latest/UWash/UWash-unsigned.ipa。此文件仍需用户在 Sideloadly 签名安装；真实登录、支付、洗衣机启动及续签未验证。
+本次本地验证码桥接检查使用模拟 API，覆盖仅点击调用、参数、成功/失败和组件未准备好，不发送网络请求。Run 44762068583 因补充订单页反馈被最终运行替代并取消。
