@@ -52,5 +52,7 @@ Bundle ID 保持 `com.sjx13.ios.uwash`，最低 iOS 17.0。复用原 SwiftUI 工
 
 新增 scanTarget，按 data.result 的 createOrderEnabled 和 deviceId/orderId 分流：可用设备读取程序资料并核对 ID；已有订单读取详情并提示到订单页查看；不可用、缺字段和异常响应分别给出设备相关提示，不反射服务器中的手机号/原因。没有放宽编号校验，也没有跳过网页登录或洗衣机分类校验。点使用按钮后仍交给官方支付宝完成程序选择与付款。
 
-增加6项针对真实客户端契约的离线回归，覆盖完整 code/data/result 响应、长数字编号、字符串编号、已有订单、不可用与缺失/错误字段，以及详情 ID 不一致。共28项Swift测试待云端运行；本地9个Swift文件语法检查和4项工作区selftest已通过。修复后的实际扫码/支付宝交接仍需用户手机验收。
+增加6项针对真实客户端契约的离线回归，覆盖完整 code/data/result 响应、长数字编号、字符串编号、已有订单、不可用与缺失/错误字段，以及详情 ID 不一致。共28项Swift测试均在云端通过；本地9个Swift文件语法检查和4项工作区selftest通过。修复后的实际扫码/支付宝交接仍需用户手机验收。
+
+最终Run 44774782864 / 提交 `dfba52f0f2010f60689e1f0077250796f885b698`：Xcode27.2编译和28项Swift核心测试全部通过。本地9个Swift文件语法检查、4项工作区selftest通过。通过GitHub连接器下载后在本地核对来源提交/run、ZIP CRC、SHA-256、0.2.1(3)、固定Bundle ID、iOS17.0、arm64、AppIcon、相机用途键，无ATS全局例外、LC_CODE_SIGNATURE、签名目录或描述文件。IPA 217346字节，SHA-256 `d08833cce1debcc09f1880323b57d65ebb72f4f380adc6aff62dc8d9ec701b4b`，交付 `artifacts/latest/UWash/UWash-unsigned.ipa`；旧0.2.0归档至 `artifacts/archive/UWash/0.2.0-2/`。用户沿用原签名身份覆盖安装后，用原机器二维码复测。编译及契约测试通过不等于真机扫码、支付、安装或续签已通过。
 <!-- END_UWASH_SCAN_FIX_20261121 -->

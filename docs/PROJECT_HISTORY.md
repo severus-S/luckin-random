@@ -160,5 +160,5 @@ SHA256：`9ffd2f6ef4e3c482e82b21170fec29fed770e5650eb8ce3b4c483709f379e8f7`。�
 
 用户截图反馈扫码后“设备或订单编号格式不正确”。APK home 的 scanCodeNavigator 明确取 e.result，官方 H5 取 t.data.result；0.2.0 解包 data 后直接读 deviceId，少了 result 层。修复从 result 分流可用设备、已有订单和不可用状态；设备详情核对扫码 ID，错误不反射手机号。保留网页先登录、扫码识别、按钮跳转支付宝的流程及原有 Bundle ID。
 
-新增6项契约回归，共28项Swift核心测试待云端执行；本地语法检查和4项selftest通过。构建及IPA校验结果完成后追加。用户截图仅证实旧版故障，不作为新版真机成功证据。没有操作电脑界面、发送短信、下单或控制设备。
+新增6项契约回归。最终Run 44774782864 / 提交 `dfba52f0f2010f60689e1f0077250796f885b698`：Xcode27.2编译和28项Swift核心测试全部通过。本地9个Swift文件语法检查、4项工作区selftest通过。通过GitHub连接器下载后在本地核对来源提交/run、ZIP CRC、SHA-256、0.2.1(3)、固定Bundle ID、iOS17.0、arm64、AppIcon、相机用途键，无ATS全局例外、LC_CODE_SIGNATURE、签名目录或描述文件。IPA 217346字节，SHA-256 `d08833cce1debcc09f1880323b57d65ebb72f4f380adc6aff62dc8d9ec701b4b`，交付 `artifacts/latest/UWash/UWash-unsigned.ipa`；旧0.2.0归档至 `artifacts/archive/UWash/0.2.0-2/`。用户沿用原签名身份覆盖安装后，用原机器二维码复测。编译及契约测试通过不等于真机扫码、支付、安装或续签已通过。用户截图仅证实旧版故障，不作为新版真机成功证据。没有操作电脑界面、发送短信、下单或控制设备。
 <!-- END_UWASH_SCAN_FIX_20261121 -->
