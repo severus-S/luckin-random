@@ -47,3 +47,7 @@ classes.dex 虽有 41911880 字节，但 class_defs 只有 4；application=com.s
 首次 Run 44766574772：Swift 包的 16 项测试中 15 项通过；末尾换行二维码被 trim 去除后接受，和“控制字符应拒绝”的输入边界不符。已将 trim 范围改为仅空白（不含换行），并给用例增加具体输入定位信息；该失败运行没有交付 IPA。
 
 Run 44766933441 的 16 项 Swift 测试全部通过；iOS 编译时 Swift 6.4.2 在错误分支的诊断过程中断言崩溃，堆栈精确指向 HairSession.perform 的隐式 catch error 与同名属性赋值。已将属性赋值明确写为 self.error；不修改 runner/流水线，也不把编译器崩溃解释为设备兼容性问题。另增加设备标识中 +、/、= 的支持及双层跳转编码回归用例，共 17 项核心测试。Run 44767354036 由包含错误分支修正的新运行替代。
+
+
+最终 Run 44767621383 / 提交 359baf1a7302a6a39f2142e114d2e760b6687912：Xcode 27.2 编译及 17 项 Swift 单测通过。本地下载核对来源、ZIP CRC、0.1.0 (1)、com.sjx13.ios.pghair、iOS17.0、arm64、AppIcon、相机用途键，无 ATS 全局例外、无 LC_CODE_SIGNATURE/签名目录/描述文件。IPA 225091 字节，SHA-256 `9b7649cc992e32e7f8348f34e23efd0bd2dfd42d5d1b7541b7f820f0d0d12cb9`。交付 artifacts/latest/PGHair/PGHair-unsigned.ipa。签名安装、登录及实际吹风流程仍待用户真机验收；付款、启动及实时状态由官方支付宝小程序处理。
+登录回到的 /__pghair__ 实际匿名读取 HTTP200，返回官方 SPA 文档；离线路由测试、原生请求上下文和输入边界验证不等同于真实账号登录。
